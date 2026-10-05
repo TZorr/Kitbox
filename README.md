@@ -2,11 +2,16 @@
 
 A 16-pad drum sampler for macOS - AU (aumu/Ktbx/Tzor), VST3 and a standalone app, built with JUCE 9.
 
+Its sibling [Transmute](https://github.com/TZorr/Transmute) rebuilds recorded
+drum hits as clean synth voices and hands a whole kit over in one step:
+**Export Kitbox Kit…** writes every drum onto its own Kitbox pad, with pan and
+notes. The demo kit below was made that way.
+
 <img src="screenshot.png" width="700" alt="Kitbox in Logic Pro, with the Transmute demo kit">
 
 ## Install
 
-Download `Kitbox 0.6.1.pkg` from
+Download `Kitbox.0.6.1.pkg` from
 [Releases](https://github.com/TZorr/Kitbox/releases) and run it; choose AU,
 VST3 or both - they go into `/Library/Audio/Plug-Ins`. Apple Silicon, macOS
 26.5 or later. The installer is unsigned, so Gatekeeper refuses it at first:
