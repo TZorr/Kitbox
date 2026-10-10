@@ -5,7 +5,8 @@ A 16-pad drum sampler for macOS - AU (aumu/Ktbx/Tzor), VST3 and a standalone app
 Its sibling [Transmute](https://github.com/TZorr/Transmute) rebuilds recorded
 drum hits as clean synth voices and hands a whole kit over in one step:
 **Export Kitbox Kit…** writes every drum onto its own Kitbox pad, with pan and
-notes. The demo kit below was made that way.
+notes. Since 0.7.0 its engine is in Kitbox too: each pad plays its sample or
+Transmute's synth of it.
 
 <img src="screenshot.png" width="700" alt="Kitbox in Logic Pro, with SMP / SYN on every pad">
 
@@ -19,8 +20,9 @@ right-click it and choose Open, or allow it under System Settings › Privacy &
 Security.
 
 **Demo kit:** [`Kits/Transmute Kit.aupreset`](Kits/Transmute%20Kit.aupreset)
-(also attached to the release) - sixteen drums made with
-[Transmute](https://github.com/TZorr/Transmute). Open it with **Load Kit**,
+(also attached to the release) - sixteen DMX drum samples, turned into
+Transmute synths right in Kitbox with **SYN**; each pad's **SMP / SYN** plays
+the original or the synth. Open it with **Load Kit**,
 or put it in `~/Music/Audio Music Apps/Plug-In Settings/Kitbox/` and Logic's
 settings menu lists it.
 

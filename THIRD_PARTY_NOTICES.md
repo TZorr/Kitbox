@@ -39,5 +39,6 @@ code or tuned constants were copied; the shifter's Hilbert allpass is
 designed by `Scripts/HilbertDesign.cpp`. No other library is linked, and
 nothing is downloaded at build or run time.
 
-The demo kit in `Kits/` was exported from Transmute, T'Zorr's drum
-resynthesiser: its sixteen drums are Transmute's synthesis, rendered to WAV.
+The demo kit in `Kits/` was made in Kitbox with SYN: it holds sixteen DMX
+drum samples, free to redistribute, and Transmute's synthesis of each,
+rendered to WAV.
