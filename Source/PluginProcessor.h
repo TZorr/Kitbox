@@ -11,6 +11,8 @@
 //    why none is ever freed there.
 //  - The loader thread reads and decodes dropped files, so a slow disk costs a
 //    moment of "loading" on the pad and never a dropout.
+//  - The Transmute workers (PadTransmuter) analyse, fit and render a pad's
+//    synth; the result is installed on the message thread like a loaded file.
 //  - Everything else - installing a decoded sample, swapping pads, saving and
 //    loading kits - happens on the message thread.
 //
@@ -23,6 +25,8 @@
 #include "Engine/DrumEngine.h"
 #include "Engine/AuPreset.h"
 #include "Engine/KitFile.h"
+#include "Engine/PadSource.h"
+#include "Engine/PadTransmuter.h"
 #include "ParameterIds.h"
 
 class KitboxProcessor : public juce::AudioProcessor,
@@ -75,6 +79,7 @@ public:
     /** Exchanges two pads: samples and every per-pad knob. */
     void swapPads (int a, int b);
 
+    /** What the pad plays: its sample, or its synth when the pad is set to one. */
     SampleData::Ptr getPadSample (int pad) const { return padSamples[(size_t) pad]; }
     bool isPadLoading (int pad) const noexcept   { return loadingCount[(size_t) pad] > 0; }
     const juce::String& getPadError (int pad) const noexcept { return padErrors[(size_t) pad]; }
@@ -108,14 +113,56 @@ public:
         written to a temporary folder under its own name. */
     juce::File writeSampleForDrag (int pad);
 
+    /** Export Samples: every pad's sample into folder/Original, every synth
+        and its .drumparams into folder/Synth, named as inside the kit
+        container ("01 Kick.wav", see KitFile.h). Files already there under
+        those names are replaced; nothing else in the folder is touched. */
+    juce::Result exportSamples (const juce::File& folder);
+    bool hasAnySample() const;
+
     int getSelectedPad() const;
     void setSelectedPad (int pad);
 
     juce::String getAudioFileWildcard() const { return formats.getWildcardForAllFormats(); }
     bool isAudioFile (const juce::File& file) const;
 
-    /** Installs an already decoded sample. Used by loads and by the tests. */
+    /** Installs an already decoded sample. Used by loads and by the tests.
+        The pad's synth goes with the old sample; a pad set to Auto or a model
+        starts fitting the new one. */
     void setPadSample (int pad, SampleData::Ptr sample);
+
+    //==============================================================================
+    //  Transmute (message thread)
+
+    PadSource getPadSource (int pad) const noexcept { return padSource[(size_t) pad]; }
+
+    /** Sample, Auto or a model, from the pad's menu. A synth already made for
+        that choice plays at once; otherwise the pad plays its sample until the
+        fit is done. */
+    void setPadSource (int pad, PadSource source);
+
+    /** SYN: every pad holding a sample Transmute can model goes to Auto. */
+    void transmuteAll();
+
+    /** A sample of at most 10 s is on the pad. */
+    bool canTransmute (int pad) const noexcept { return PadTransmuter::canTransmute (padOriginals[(size_t) pad].get()); }
+    bool isPadSynth (int pad) const noexcept;
+    /** 0...1 while the pad fits, -1 otherwise. */
+    float getFitProgress (int pad) const { return transmuter.getProgress (pad); }
+
+    SampleData::Ptr getPadOriginal (int pad) const { return padOriginals[(size_t) pad]; }
+    SampleData::Ptr getPadSynth (int pad) const    { return padSynths[(size_t) pad]; }
+    const std::optional<transmute::DrumParams>& getPadSynthParams (int pad) const { return padSynthParams[(size_t) pad]; }
+    /** The model the pad's sample suggests, once it has been analysed. */
+    const std::optional<transmute::DrumModel>& getSuggestedModel (int pad) const { return padSuggested[(size_t) pad]; }
+    const juce::String& getSynthError (int pad) const noexcept { return synthErrors[(size_t) pad]; }
+
+    /** SYN's pass: pads done of the pads it started; total 0 when none runs. */
+    struct SynProgress { int done = 0, total = 0; };
+    SynProgress getSynProgress() const;
+
+    /** Installs finished fits now rather than on the async update. For tests. */
+    void takeTransmuteResults();
 
     //==============================================================================
     juce::AudioProcessorValueTreeState parameters;
@@ -131,6 +178,15 @@ private:
     static BusesProperties makeBuses();
 
     juce::Result applyKit (const KitFile::Contents& kit);
+    KitFile::Synths synthsForSaving() const;
+
+    /** Puts `sample` on the engine for the pad, keeping the pool's books. */
+    void play (int pad, SampleData::Ptr sample);
+    /** Plays the synth if it is the pad's choice and made for it, else the sample. */
+    void activate (int pad);
+    bool synthMatches (int pad) const;
+    void requestFit (int pad);
+    void storePadSource (int pad);
 
     void timerCallback() override;
     void handleAsyncUpdate() override;
@@ -170,7 +226,16 @@ private:
     juce::AudioFormatManager formats;
     SamplePool pool;
 
-    std::array<SampleData::Ptr, KitParams::numPads> padSamples;
+    std::array<SampleData::Ptr, KitParams::numPads> padSamples;     // what plays
+    std::array<SampleData::Ptr, KitParams::numPads> padOriginals;   // the sample as loaded
+    std::array<SampleData::Ptr, KitParams::numPads> padSynths;      // its Transmute synth
+    std::array<std::optional<transmute::DrumParams>, KitParams::numPads> padSynthParams;
+    std::array<std::optional<transmute::DrumModel>, KitParams::numPads> padSuggested;
+    std::array<PadSource, KitParams::numPads> padSource {};
+    std::array<int, KitParams::numPads> padGeneration {};
+    std::array<juce::String, KitParams::numPads> synthErrors;
+    std::array<bool, KitParams::numPads> synBatch {};
+    int synTotal = 0;
     std::array<int, KitParams::numPads> loadingCount {};
     std::array<juce::String, KitParams::numPads> padErrors;
 
@@ -179,6 +244,7 @@ private:
     std::atomic<int> learnedAssignment { -1 };   // (pad << 8) | note
 
     Loader loader { *this };
+    PadTransmuter transmuter { [this] { triggerAsyncUpdate(); } };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (KitboxProcessor)
 };

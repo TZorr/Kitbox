@@ -44,7 +44,11 @@ cmake_minimum_required(VERSION 3.22)
 # 0.5.2: the Shifter's Shift prints whole hertz above 100 Hz (not 123.4567 Hz).
 # 0.6.0: Humanize's range doubled, 50 % at start (a parameter default changed).
 # 0.6.1: pads can be renamed (right-click > Rename...).
-project(Kitbox VERSION 0.6.1)
+# 0.7.0: Transmute inside - a pad plays its sample or Transmute's synth of it
+# (right-click > Sample / Auto / a model; SYN for every pad); the kit container
+# became a ZIP holding originals, synths and their .drumparams.
+# 0.7.1: right-click > Export Samples... writes them into a folder.
+project(Kitbox VERSION 0.7.1)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -91,6 +95,23 @@ juce_add_plugin(Kitbox
     NEEDS_WEB_BROWSER           FALSE
     NEEDS_CURL                  FALSE)
 
+# Transmute's analysis, fit and synth, ported from its Swift engine (see
+# Source/Transmute/Dsp.h). No fused multiply-adds: Swift does not contract
+# a * b + c into one instruction, clang would, and the fused form rounds
+# differently - enough, over a fit's thousands of dependent steps, to land on
+# another drum than Transmute does for the same sample.
+set(KITBOX_TRANSMUTE_SOURCES
+    Source/Transmute/DrumParams.cpp
+    Source/Transmute/Dsp.cpp
+    Source/Transmute/DrumSynth.cpp
+    Source/Transmute/Comparison.cpp
+    Source/Transmute/Analyzer.cpp
+    Source/Transmute/Fitter.cpp
+    Source/Transmute/AnalysisInput.cpp)
+
+# And no -Wfloat-equal there: the port compares exactly where the Swift does.
+set_source_files_properties(${KITBOX_TRANSMUTE_SOURCES} PROPERTIES COMPILE_OPTIONS "-ffp-contract=off;-Wno-float-equal")
+
 # The engine is listed separately so the verification target links exactly the
 # objects the plugin runs. Testing a reimplementation tests nothing.
 set(KITBOX_CORE_SOURCES
@@ -101,7 +122,9 @@ set(KITBOX_CORE_SOURCES
     Source/Engine/Fx/EffectCatalog.cpp
     Source/Engine/Fx/EffectBlock.cpp
     Source/Engine/KitFile.cpp
-    Source/Engine/AuPreset.cpp)
+    Source/Engine/AuPreset.cpp
+    Source/Engine/PadTransmuter.cpp
+    ${KITBOX_TRANSMUTE_SOURCES})
 
 set(KITBOX_UI_SOURCES
     Source/UI/Knob.cpp
@@ -123,6 +146,8 @@ target_compile_definitions(Kitbox PUBLIC
     JUCE_REPORT_APP_USAGE=0)
 
 target_link_libraries(Kitbox PRIVATE
+    "-framework Accelerate"
+    "-framework AudioToolbox"
     juce::juce_audio_utils
     juce::juce_dsp
     juce::juce_gui_extra
@@ -139,16 +164,20 @@ juce_add_console_app(KitboxCheck PRODUCT_NAME "KitboxCheck")
 
 target_sources(KitboxCheck PRIVATE
     Verification/KitboxCheck.cpp
+    Verification/TransmuteCheck.cpp
     ${KITBOX_CORE_SOURCES})
 
 target_include_directories(KitboxCheck PRIVATE Source)
 
 target_compile_definitions(KitboxCheck PUBLIC
+    KITBOX_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_REPORT_APP_USAGE=0)
 
 target_link_libraries(KitboxCheck PRIVATE
+    "-framework Accelerate"
+    "-framework AudioToolbox"
     juce::juce_audio_basics
     juce::juce_audio_formats
     juce::juce_data_structures

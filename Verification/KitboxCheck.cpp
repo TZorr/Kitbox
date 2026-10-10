@@ -921,6 +921,41 @@ namespace
         check (kit.samples[0].fileName == "Stereo Kick.wav", "and under its name", kit.samples[0].fileName);
         check (kit.samples[3].bytes.getSize() == 0, "empty pads stay empty");
 
+        check (kit.version == KitFile::formatVersion && std::memcmp (block.getData(), "PK\3\4", 4) == 0,
+               "a kit is written as a ZIP (version 2)");
+
+        // With a synth beside a sample: the WAV and its parameters come back.
+        {
+            KitFile::Synths synths;
+            transmute::DrumParams drum;
+            drum.model = transmute::DrumModel::snare;
+            drum.fundamental = 187.123456789;
+            synths[15] = { SampleData::fromAudio (sine (200.0, 0.1, rate), rate, "Last Pad"), drum };
+
+            const auto withSynth = KitFile::read (KitFile::write (params, samples, synths).getData(),
+                                                  KitFile::write (params, samples, synths).getSize());
+            check (withSynth.ok() && withSynth.synths[15].file.bytes == synths[15].sample->getOriginal()
+                       && withSynth.synths[15].file.fileName == "Last Pad.wav"
+                       && withSynth.synths[15].params == drum.clamped()
+                       && withSynth.synths[0].file.bytes.getSize() == 0,
+                   "a pad's synth and its parameters come back exactly");
+            check (KitFile::entryName (2, "Kick: 1/2.wav") == "03 Kick- 1-2.wav", "file names are made safe in the archive",
+                   KitFile::entryName (2, "Kick: 1/2.wav"));
+        }
+
+        // Version 1, as Kitbox wrote it up to 0.6 and Transmute's Export Kitbox Kit still does.
+        {
+            const auto file = juce::File (KITBOX_SOURCE_DIR).getChildFile ("Kits/Transmute Kit.aupreset");
+            const auto preset = AuPreset::read (file.loadFileAsString());
+            const auto old = KitFile::read (preset.pluginState.getData(), preset.pluginState.getSize());
+            int filled = 0;
+            for (const auto& stored : old.samples)
+                filled += stored.bytes.getSize() > 0 ? 1 : 0;
+
+            check (preset.ok() && old.ok() && old.version == 1 && filled > 0 && old.params.isValid(),
+                   "a version 1 kit (Transmute's export) still reads", old.error + " " + juce::String (filled) + " samples");
+        }
+
         auto damaged = block;
         damaged[0] = 'X';
         check (! KitFile::read (damaged.getData(), damaged.getSize()).ok(), "a file that is not a kit is refused");
@@ -970,6 +1005,11 @@ namespace
     }
 }
 
+namespace TransmuteCheck
+{
+    void run (const juce::File& golden, const std::function<void (bool, const juce::String&, const juce::String&)>& check);
+}
+
 int main()
 {
     std::printf ("Filter...\n");         testFilter();
@@ -981,6 +1021,9 @@ int main()
     std::printf ("Formatting...\n");     testFormatting();
     std::printf ("Old kits...\n");       testMigration();
     std::printf ("Samples, kit file...\n"); testSamplesAndKitFile();
+    std::printf ("Transmute port...\n");
+    TransmuteCheck::run (juce::File (KITBOX_SOURCE_DIR).getChildFile ("build/transmute-golden"),
+                         [] (bool condition, const juce::String& what, const juce::String& detail) { check (condition, what, detail); });
 
     std::printf ("\n%d checks, %d failure(s)\n", checks, failures);
     return failures == 0 ? 0 : 1;

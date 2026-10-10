@@ -6,7 +6,13 @@
 //
 //  Click: select the pad and play it, louder the higher up it is hit - the top
 //  edge is full velocity, the bottom edge about a third. Right-click: load,
-//  rename or clear.
+//  rename or clear, and what the pad plays - its sample, or Transmute's synth
+//  of it (Auto, or one of the five models). And Export Samples, which writes
+//  every pad's sample and synth into a folder.
+//
+//  Top right beside the note, SMP / SYN: what the pad plays, at a click. SYN goes back to
+//  the synth chosen last (Auto unless the menu picked a model); it is filled
+//  once the synth plays, an outline while it fits.
 //
 //  Drag and drop, all three ways:
 //
@@ -20,6 +26,8 @@
 #pragma once
 
 #include <juce_gui_basics/juce_gui_basics.h>
+
+#include "../Engine/PadSource.h"
 
 class KitboxProcessor;
 
@@ -36,6 +44,11 @@ public:
 
     /** 30 Hz, from the editor: picks up hits from MIDI and fades the flash. */
     void updateFlash();
+
+    /** The SMP / SYN switch, and whether it is shown and can be clicked. */
+    juce::Rectangle<float> toggleBounds() const;
+    bool toggleVisible() const;
+    bool toggleEnabled() const;
 
     static bool parseDragDescription (const juce::var& description, int& pad);
     static juce::String dragDescription (int pad);
@@ -60,12 +73,16 @@ private:
     void setDropHover (bool hover);
     void showMenu();
     void showRename();
+    void exportSamples();
+    void toggleSource();
+    int sourceState() const;
 
     KitboxProcessor& processor;
     const int index;
-    bool selected = false, dropHover = false, dragStarted = false;
+    bool selected = false, dropHover = false, dragStarted = false, toggleHit = false;
     int lastHitCount = 0;
-    int shownNote = -1, shownChoke = -1;
+    int shownNote = -1, shownChoke = -1, shownSourceState = -1;
+    PadSource lastSynthSource = PadSource::automatic;
     float flash = 0.0f;
 
     std::unique_ptr<juce::FileChooser> chooser;

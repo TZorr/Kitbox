@@ -4,6 +4,14 @@ Kitbox is © 2026 T'Zorr and is distributed under the GNU Affero General
 Public License, version 3 (AGPLv3) - see [LICENSE](LICENSE). This follows
 from the one third-party component it links against.
 
+## Transmute
+
+- **What:** the analysis, fit and synth in `Source/Transmute/` are a C++ port
+  of Transmute's Swift engine (`Transmute/Engine`), by the same author.
+- **Copyright:** © 2026 T'Zorr. **License:** MIT -
+  <https://github.com/TZorr/Transmute/blob/main/LICENSE>. MIT code may be
+  included in an AGPLv3 work; its copyright notice stays with it.
+
 ## JUCE
 
 - **What:** the JUCE 9 framework (audio plugin client, audio formats, GUI).

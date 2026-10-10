@@ -110,7 +110,7 @@ SampleData::Ptr SampleData::fromFile (const juce::File& file,
 }
 
 SampleData::Ptr SampleData::fromAudio (const juce::AudioBuffer<float>& audio, double rate,
-                                       const juce::String& sampleName)
+                                       const juce::String& sampleName, int bitsPerSample)
 {
     juce::MemoryBlock wavBytes;
 
@@ -121,7 +121,10 @@ SampleData::Ptr SampleData::fromAudio (const juce::AudioBuffer<float>& audio, do
         auto writer = wav.createWriterFor (stream, juce::AudioFormatWriterOptions()
                                                        .withSampleRate (rate)
                                                        .withNumChannels (audio.getNumChannels())
-                                                       .withBitsPerSample (24));
+                                                       .withBitsPerSample (bitsPerSample == 32 ? 32 : 24)
+                                                       .withSampleFormat (bitsPerSample == 32
+                                                                              ? juce::AudioFormatWriterOptions::SampleFormat::floatingPoint
+                                                                              : juce::AudioFormatWriterOptions::SampleFormat::automatic));
         jassert (writer != nullptr);
 
         if (writer != nullptr)

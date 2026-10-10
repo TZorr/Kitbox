@@ -293,8 +293,10 @@ void KitboxEditor::saveKit()
     const auto current = kitbox.getKitName();
     const auto suggested = current.isNotEmpty() ? juce::File::createLegalFileName (current) : juce::String ("Kit");
 
+    // .aupreset unless the name is given .kitbox: then the bare container, a
+    // ZIP of the kit's samples and synths (see KitFile.h).
     chooser = std::make_unique<juce::FileChooser> ("Save Kit", presetFolder().getChildFile (suggested),
-                                                   juce::String ("*") + AuPreset::extension);
+                                                   juce::String ("*") + AuPreset::extension + ";*" + KitFile::extension);
 
     chooser->launchAsync (juce::FileBrowserComponent::saveMode
                               | juce::FileBrowserComponent::canSelectFiles
@@ -304,7 +306,8 @@ void KitboxEditor::saveKit()
         if (safe == nullptr || fc.getResult() == juce::File())
             return;
 
-        const auto file = fc.getResult().withFileExtension (AuPreset::extension);
+        const auto chosen = fc.getResult();
+        const auto file = chosen.hasFileExtension (KitFile::extension) ? chosen : chosen.withFileExtension (AuPreset::extension);
         const auto result = safe->kitbox.saveKit (file);
 
         if (result.failed())

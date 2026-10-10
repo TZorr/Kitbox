@@ -5,7 +5,10 @@
 //  The dark screen in the header: which pad is selected, what is on it, and
 //  its waveform with the start point marked.
 //
-//  Click it to audition the pad at full velocity.
+//  Click it to audition the pad at full velocity. SYN, top right, turns every
+//  pad's sample into Transmute's synth of it, on Auto (see PadSource.h); while
+//  that runs it counts the pads done. While the pad shown fits, a bar crosses
+//  its waveform from left to right.
 //
 
 #pragma once
@@ -29,6 +32,9 @@ public:
 
 private:
     juce::String routingText() const;
+    juce::String synText() const;
+    juce::String statusText() const;
+    juce::Rectangle<float> synBounds() const;
 
     KitboxProcessor& processor;
     int pad = 0;
@@ -36,5 +42,5 @@ private:
     const void* shownSample = nullptr;
     float shownStart = -1.0f;
     bool shownLoading = false;
-    juce::String shownRouting;
+    juce::String shownRouting, shownSyn, shownStatus;
 };

@@ -7,11 +7,11 @@ drum hits as clean synth voices and hands a whole kit over in one step:
 **Export Kitbox Kit…** writes every drum onto its own Kitbox pad, with pan and
 notes. The demo kit below was made that way.
 
-<img src="screenshot.png" width="700" alt="Kitbox in Logic Pro, with the Transmute demo kit">
+<img src="screenshot.png" width="700" alt="Kitbox in Logic Pro, with SMP / SYN on every pad">
 
 ## Install
 
-Download `Kitbox.0.6.1.pkg` from
+Download `Kitbox.0.7.1.pkg` from
 [Releases](https://github.com/TZorr/Kitbox/releases) and run it; choose AU,
 VST3 or both - they go into `/Library/Audio/Plug-Ins`. Apple Silicon, macOS
 26.5 or later. The installer is unsigned, so Gatekeeper refuses it at first:
@@ -72,13 +72,45 @@ saved before then load with their Humanize halved, so they sound as they did.
 
 ## Pads
 
-- Click to play (higher on the pad = louder), right-click to load, rename or clear.
+- Click to play (higher on the pad = louder), right-click to load, rename or
+  clear, or to choose Sample, Auto or a Transmute model (see below).
 - **Rename...** renames the pad's sample: the name is saved with the kit and
   the session, moves with the pad when it is swapped, and is the file name a
   drag out of the pad hands over (the extension stays).
 - Drop audio files on a pad; several files fill the following pads in name order.
 - Drag a pad onto another to swap them (sample and knobs).
-- Drag a pad out of the window to hand its original file to the Finder or a DAW.
+- **Export Samples...** (right-click, any pad) writes the whole kit's files
+  into a new folder: `Original/` with every pad's sample as it came, `Synth/`
+  with every synth and its `.drumparams`, named `01 Kick 01.wav` and so on,
+  as inside the kit container.
+- Drag a pad out of the window to hand its file to the Finder or a DAW - the
+  sample, or the synth when the pad plays one.
+
+## Transmute
+
+Kitbox carries [Transmute](https://github.com/TZorr/Transmute)'s engine: the
+analysis that measures a recorded hit, the fit that rebuilds it from a small
+synth voice, and the synth itself - ported to C++ and held against the Swift
+original, which it matches bit for bit on Transmute's 24 test samples
+(analysis, fit and render; see `Verification/TransmuteCheck.cpp`). No knobs
+for it: Transmute's sliders stay in Transmute.
+
+- **Right-click a pad** and choose what it plays: **Sample**, **Auto** (the
+  model the hit suggests, named once it has been analysed), or one of the five
+  models - **Kick / Tom**, **Snare**, **Hi-Hat**, **Modal**, **Clap**.
+- **SMP / SYN**, top right on each pad beside the note, switches it between
+  its sample and its synth with one click (back to the model chosen last, Auto
+  otherwise). It is filled once the synth plays, an outline while it fits.
+- **SYN**, top right in the display, sets every pad that holds a sample to
+  Auto, once. While it works it counts the pads done (`SYN 3/10`).
+- A pad plays its sample until its fit is in (one to four seconds, several
+  pads at once), then the synth; the display says `fitting... 40 %`, with a
+  bar crossing the waveform as far as the fit has got, then `synth Snare`. Back to Sample and again to the same model switch at once.
+- The synth is rendered at the sample's own rate, as Transmute exports, and
+  every Kitbox knob acts on it as on any sample. A new sample dropped on a pad
+  set to Auto or a model is fitted in turn.
+- Up to 10 seconds, Transmute's limit for a single hit; longer samples stay
+  samples.
 
 ## Kits
 
@@ -95,7 +127,20 @@ Until it exists, they open in Logic's settings folder for Kitbox,
 name is what Logic shows. Inside, under `jucePluginState`, is the Kitbox
 container: every pad's original sample file plus all settings, gzip-compressed.
 The DAW session stores the same container, so a project never depends on where
-the samples were. Bare `.kitbox` files from earlier builds still load.
+the samples were.
+
+Given the extension `.kitbox` instead, Save Kit writes the container itself.
+Since 0.7.0 that is a plain ZIP: rename it to `.zip` (or `unzip` it) to get at
+the samples.
+
+    kit.xml                        every knob, each pad's Sample/Auto/model choice
+    Original/01 Kick 01.wav        each pad's sample, the file as it came
+    Synth/01 Kick 01.wav           its Transmute synth (24-bit, or 32-bit float above 0 dBFS)
+    Synth/01 Kick 01.drumparams    the synth's parameters - opens in Transmute
+
+The two digits are the pad. At most 16 originals and 16 synths. Kits and
+sessions from before 0.7.0, and the kits Transmute's *Export Kitbox Kit*
+writes, still load.
 
 ## Building
 

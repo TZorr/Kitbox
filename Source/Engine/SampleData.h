@@ -45,11 +45,12 @@ public:
                          juce::AudioFormatManager& formats,
                          juce::String& error);
 
-    /** A sample made directly from audio, for tests and the demo kit. The
-        "original" is a WAV of the same audio, so every path that needs one
+    /** A sample made directly from audio: tests, the demo kit, and a pad's
+        Transmute synth. The "original" is a WAV of the same audio - 24-bit,
+        or 32-bit float with bitsPerSample 32 - so every path that needs one
         still has one. */
     static Ptr fromAudio (const juce::AudioBuffer<float>& audio, double sampleRate,
-                          const juce::String& name);
+                          const juce::String& name, int bitsPerSample = 24);
 
     //==============================================================================
     const juce::String& getName() const noexcept         { return name; }

@@ -256,6 +256,7 @@ KitboxProcessor::~KitboxProcessor()
     // The loader first: it posts results back to this object, and must not be
     // able to while the rest of it is being torn down.
     loader.stop();
+    transmuter.shutdown();
     cancelPendingUpdate();
     stopTimer();
 }
@@ -388,7 +389,16 @@ juce::AudioProcessorEditor* KitboxProcessor::createEditor()
 //  saves whatever the last flush left there. copyState() flushes first.
 void KitboxProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    destData = KitFile::write (parameters.copyState(), padSamples);
+    destData = KitFile::write (parameters.copyState(), padOriginals, synthsForSaving());
+}
+
+KitFile::Synths KitboxProcessor::synthsForSaving() const
+{
+    KitFile::Synths synths;
+    for (size_t pad = 0; pad < synths.size(); ++pad)
+        if (padSynths[pad] != nullptr && padSynthParams[pad])
+            synths[pad] = { padSynths[pad], padSynthParams[pad] };
+    return synths;
 }
 
 void KitboxProcessor::setStateInformation (const void* data, int sizeInBytes)
@@ -403,8 +413,19 @@ juce::Result KitboxProcessor::applyKit (const KitFile::Contents& kit)
 {
     // Decoded before anything is replaced, so a kit with one unreadable sample
     // still loads everything else - and says which pad it could not fill.
-    std::array<SampleData::Ptr, KitParams::numPads> decoded;
+    std::array<SampleData::Ptr, KitParams::numPads> decoded, synths;
     juce::StringArray problems;
+
+    // A synth that does not decode, or lost its parameters, is fitted again.
+    for (int pad = 0; pad < KitParams::numPads; ++pad)
+    {
+        const auto& stored = kit.synths[(size_t) pad];
+        if (stored.file.bytes.getSize() > 0 && stored.params)
+        {
+            juce::String error;
+            synths[(size_t) pad] = SampleData::decode (stored.file.bytes, stored.file.fileName, formats, error);
+        }
+    }
 
     for (int pad = 0; pad < KitParams::numPads; ++pad)
     {
@@ -442,9 +463,27 @@ juce::Result KitboxProcessor::applyKit (const KitFile::Contents& kit)
     }
 
     parameters.replaceState (params);
+    transmuter.cancelAll();
 
     for (int pad = 0; pad < KitParams::numPads; ++pad)
-        setPadSample (pad, decoded[(size_t) pad]);
+    {
+        const auto p = (size_t) pad;
+        padSource[p] = PadSources::fromId (parameters.state.getProperty (PadSources::sourceProperty (pad)).toString());
+        const auto suggested = parameters.state.getProperty (PadSources::suggestedProperty (pad)).toString();
+        padSuggested[p] = transmute::modelFromId (suggested.toStdString());
+        padOriginals[p] = decoded[p];
+        padSynths[p] = synths[p];
+        padSynthParams[p] = synths[p] != nullptr ? kit.synths[p].params : std::nullopt;
+        synthErrors[p].clear();
+        synBatch[p] = false;
+        ++padGeneration[p];
+        activate (pad);
+
+        if (padSource[p] != PadSource::sample && ! synthMatches (pad))
+            requestFit (pad);
+    }
+
+    synTotal = 0;
 
     sendChangeMessage();
 
@@ -457,13 +496,20 @@ juce::Result KitboxProcessor::saveKit (const juce::File& file)
     // session that restores it shows the same name again.
     setKitName (file.getFileNameWithoutExtension());
 
-    const auto state = KitFile::write (parameters.copyState(), padSamples);
-    const auto text  = AuPreset::write (state, getKitName());
+    const auto state = KitFile::write (parameters.copyState(), padOriginals, synthsForSaving());
 
     // replaceWithData writes a temporary file and moves it into place. Opening
     // the file with createOutputStream would append to an existing kit.
-    if (! file.getParentDirectory().createDirectory()
-        || ! file.replaceWithText (text, false, false, "\n"))
+    if (! file.getParentDirectory().createDirectory())
+        return juce::Result::fail ("Could not write " + file.getFullPathName());
+
+    // Given the .kitbox extension, the container itself: a ZIP whose samples
+    // anyone can unpack (see KitFile.h). Otherwise the .aupreset Logic lists.
+    const auto written = file.hasFileExtension (KitFile::extension)
+                       ? file.replaceWithData (state.getData(), state.getSize())
+                       : file.replaceWithText (AuPreset::write (state, getKitName()), false, false, "\n");
+
+    if (! written)
         return juce::Result::fail ("Could not write " + file.getFullPathName());
 
     return juce::Result::ok();
@@ -530,6 +576,26 @@ void KitboxProcessor::setPadSample (int pad, SampleData::Ptr sample)
     if (pad < 0 || pad >= KitParams::numPads)
         return;
 
+    const auto p = (size_t) pad;
+    padOriginals[p] = std::move (sample);
+    padSynths[p] = nullptr;
+    padSynthParams[p].reset();
+    padSuggested[p].reset();
+    synthErrors[p].clear();
+    synBatch[p] = false;
+    ++padGeneration[p];
+    transmuter.cancel (pad);
+    storePadSource (pad);
+
+    activate (pad);
+
+    // The pad keeps its choice: on Auto or a model, the new sample is fitted.
+    if (padSource[p] != PadSource::sample)
+        requestFit (pad);
+}
+
+void KitboxProcessor::play (int pad, SampleData::Ptr sample)
+{
     auto previous = padSamples[(size_t) pad];
 
     pool.add (sample);
@@ -554,16 +620,202 @@ void KitboxProcessor::renamePad (int pad, const juce::String& newName)
     if (pad < 0 || pad >= KitParams::numPads)
         return;
 
-    const auto sample = getPadSample (pad);
+    const auto sample = getPadOriginal (pad);
 
     if (sample == nullptr || newName.trim().isEmpty() || newName.trim() == sample->getName())
         return;
 
+    // The synth is the same drum: it goes by the same name.
     sample->rename (newName);
+    if (const auto synth = getPadSynth (pad))
+        synth->rename (newName);
 
     // Not a parameter, so the host would not know the session changed.
     updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
     sendChangeMessage();
+}
+
+//==============================================================================
+//  Transmute
+bool KitboxProcessor::synthMatches (int pad) const
+{
+    const auto p = (size_t) pad;
+
+    if (padSource[p] == PadSource::sample || padSynths[p] == nullptr || ! padSynthParams[p])
+        return false;
+
+    const auto wanted = padSource[p] == PadSource::automatic ? padSuggested[p] : PadSources::model (padSource[p]);
+    return wanted.has_value() && *wanted == padSynthParams[p]->model;
+}
+
+bool KitboxProcessor::isPadSynth (int pad) const noexcept
+{
+    const auto& playing = padSamples[(size_t) pad];
+    return playing != nullptr && playing == padSynths[(size_t) pad];
+}
+
+void KitboxProcessor::activate (int pad)
+{
+    const auto& wanted = synthMatches (pad) ? padSynths[(size_t) pad] : padOriginals[(size_t) pad];
+
+    if (wanted != padSamples[(size_t) pad])
+        play (pad, wanted);
+}
+
+void KitboxProcessor::requestFit (int pad)
+{
+    const auto p = (size_t) pad;
+    const auto& original = padOriginals[p];
+
+    if (original == nullptr)
+        return;
+
+    if (! PadTransmuter::canTransmute (original.get()))
+    {
+        synthErrors[p] = "Longer than 10 s - Transmute models a single hit.";
+        padSource[p] = PadSource::sample;
+        storePadSource (pad);
+        return;
+    }
+
+    synthErrors[p].clear();
+    transmuter.start ({ pad, ++padGeneration[p], original, PadSources::model (padSource[p]) });
+}
+
+void KitboxProcessor::storePadSource (int pad)
+{
+    const auto p = (size_t) pad;
+    parameters.state.setProperty (PadSources::sourceProperty (pad), PadSources::id (padSource[p]), nullptr);
+
+    if (padSuggested[p])
+        parameters.state.setProperty (PadSources::suggestedProperty (pad), transmute::modelId (*padSuggested[p]), nullptr);
+    else
+        parameters.state.removeProperty (PadSources::suggestedProperty (pad), nullptr);
+}
+
+void KitboxProcessor::setPadSource (int pad, PadSource source)
+{
+    if (pad < 0 || pad >= KitParams::numPads)
+        return;
+
+    const auto p = (size_t) pad;
+
+    // The same choice again, already fitting for it: nothing to start over.
+    if (padSource[p] == source && transmuter.isBusy (pad))
+        return;
+
+    padSource[p] = source;
+    synthErrors[p].clear();
+    storePadSource (pad);
+
+    if (source == PadSource::sample || synthMatches (pad))
+    {
+        // Nothing to fit: whatever was fitting for another choice stops.
+        transmuter.cancel (pad);
+        ++padGeneration[p];
+    }
+    else
+    {
+        requestFit (pad);
+    }
+
+    activate (pad);
+
+    updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
+    sendChangeMessage();
+}
+
+void KitboxProcessor::transmuteAll()
+{
+    if (getSynProgress().total == 0)
+        synBatch.fill (false);
+
+    for (int pad = 0; pad < KitParams::numPads; ++pad)
+    {
+        const auto p = (size_t) pad;
+
+        if (! canTransmute (pad) || (padSource[p] == PadSource::automatic && synthMatches (pad)))
+            continue;
+
+        if (padSource[p] == PadSource::automatic && transmuter.isBusy (pad))
+        {
+            synBatch[p] = true;   // already on its way: counted, not restarted
+            continue;
+        }
+
+        padSource[p] = PadSource::automatic;
+        synthErrors[p].clear();
+        storePadSource (pad);
+
+        if (synthMatches (pad))
+        {
+            transmuter.cancel (pad);
+            activate (pad);
+            continue;
+        }
+
+        requestFit (pad);
+        synBatch[p] = true;
+    }
+
+    synTotal = (int) std::count (synBatch.begin(), synBatch.end(), true);
+
+    updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
+    sendChangeMessage();
+}
+
+KitboxProcessor::SynProgress KitboxProcessor::getSynProgress() const
+{
+    int busy = 0;
+    for (int pad = 0; pad < KitParams::numPads; ++pad)
+        if (synBatch[(size_t) pad] && transmuter.isBusy (pad))
+            ++busy;
+
+    return busy == 0 ? SynProgress {} : SynProgress { synTotal - busy, synTotal };
+}
+
+void KitboxProcessor::takeTransmuteResults()
+{
+    bool changed = false;
+
+    for (auto& result : transmuter.takeResults())
+    {
+        const auto p = (size_t) result.pad;
+        transmuter.finished (result.pad, result.generation);
+
+        // The pad has moved on - cleared, reloaded, swapped, another choice.
+        if (result.generation != padGeneration[p] || result.cancelled)
+            continue;
+
+        if (result.synth != nullptr)
+        {
+            padSynths[p] = result.synth;
+            padSynthParams[p] = result.params;
+            padSuggested[p] = result.suggested;
+        }
+        else
+        {
+            // Silent, too short, unreadable: the pad goes back to its sample, and says why.
+            synthErrors[p] = result.error;
+            padSource[p] = PadSource::sample;
+        }
+
+        storePadSource (result.pad);
+        activate (result.pad);
+        changed = true;
+    }
+
+    if (getSynProgress().total == 0)
+    {
+        synBatch.fill (false);
+        synTotal = 0;
+    }
+
+    if (changed)
+    {
+        updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
+        sendChangeMessage();
+    }
 }
 
 void KitboxProcessor::swapPads (int a, int b)
@@ -571,11 +823,29 @@ void KitboxProcessor::swapPads (int a, int b)
     if (a == b || a < 0 || b < 0 || a >= KitParams::numPads || b >= KitParams::numPads)
         return;
 
-    auto sampleA = padSamples[(size_t) a];
-    auto sampleB = padSamples[(size_t) b];
-    setPadSample (a, sampleB);
-    setPadSample (b, sampleA);
-    std::swap (padErrors[(size_t) a], padErrors[(size_t) b]);
+    // Everything that is the sound moves: sample, synth, the Transmute choice.
+    // A fit still running belongs to the old place; it is started again here.
+    const auto ia = (size_t) a, ib = (size_t) b;
+    transmuter.cancel (a);
+    transmuter.cancel (b);
+    ++padGeneration[ia];
+    ++padGeneration[ib];
+    std::swap (padOriginals[ia], padOriginals[ib]);
+    std::swap (padSynths[ia], padSynths[ib]);
+    std::swap (padSynthParams[ia], padSynthParams[ib]);
+    std::swap (padSuggested[ia], padSuggested[ib]);
+    std::swap (padSource[ia], padSource[ib]);
+    std::swap (synthErrors[ia], synthErrors[ib]);
+    std::swap (synBatch[ia], synBatch[ib]);
+    std::swap (padErrors[ia], padErrors[ib]);
+
+    for (const auto pad : { a, b })
+    {
+        storePadSource (pad);
+        activate (pad);
+        if (padSource[(size_t) pad] != PadSource::sample && ! synthMatches (pad))
+            requestFit (pad);
+    }
 
     for (const auto* suffix : KitParams::Pad::all)
     {
@@ -687,6 +957,51 @@ juce::File KitboxProcessor::writeSampleForDrag (int pad)
     return file;
 }
 
+juce::Result KitboxProcessor::exportSamples (const juce::File& folder)
+{
+    const auto write = [&folder] (const juce::String& path, const void* data, size_t size)
+    {
+        const auto file = folder.getChildFile (path);
+        return file.getParentDirectory().createDirectory().wasOk() && file.replaceWithData (data, size);
+    };
+
+    juce::StringArray failed;
+
+    for (int pad = 0; pad < KitParams::numPads; ++pad)
+    {
+        if (const auto& original = padOriginals[(size_t) pad])
+        {
+            const auto name = "Original/" + KitFile::entryName (pad, original->getFileName());
+            if (! write (name, original->getOriginal().getData(), original->getOriginal().getSize()))
+                failed.add (name);
+        }
+
+        if (const auto& synth = padSynths[(size_t) pad])
+        {
+            const auto name = "Synth/" + KitFile::entryName (pad, synth->getFileName());
+            if (! write (name, synth->getOriginal().getData(), synth->getOriginal().getSize()))
+                failed.add (name);
+
+            if (const auto& params = padSynthParams[(size_t) pad])
+            {
+                const auto json = params->toJson();
+                const auto paramsName = name.upToLastOccurrenceOf (".", false, false) + ".drumparams";
+                if (! write (paramsName, json.data(), json.size()))
+                    failed.add (paramsName);
+            }
+        }
+    }
+
+    return failed.isEmpty() ? juce::Result::ok()
+                            : juce::Result::fail ("Could not write to " + folder.getFullPathName() + ":\n"
+                                                  + failed.joinIntoString ("\n"));
+}
+
+bool KitboxProcessor::hasAnySample() const
+{
+    return std::any_of (padOriginals.begin(), padOriginals.end(), [] (const auto& s) { return s != nullptr; });
+}
+
 int KitboxProcessor::getSelectedPad() const
 {
     return juce::jlimit (0, KitParams::numPads - 1, (int) parameters.state.getProperty (KitParams::propSelectedPad, 0));
@@ -712,6 +1027,8 @@ void KitboxProcessor::timerCallback()
 
 void KitboxProcessor::handleAsyncUpdate()
 {
+    takeTransmuteResults();
+
     for (auto& result : loader.takeResults())
     {
         auto& count = loadingCount[(size_t) result.pad];

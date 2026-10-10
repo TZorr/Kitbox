@@ -28,16 +28,46 @@ void SampleDisplay::refresh()
     const auto start = processor.parameters.getRawParameterValue (KitParams::padId (pad, KitParams::Pad::start))->load();
     const auto loading = processor.isPadLoading (pad);
     const auto routing = routingText();
+    const auto syn = synText();
+    const auto status = statusText();
 
     if (sample.get() != shownSample || ! juce::exactlyEqual (start, shownStart) || loading != shownLoading
-        || routing != shownRouting)
+        || routing != shownRouting || syn != shownSyn || status != shownStatus)
     {
         shownSample = sample.get();
         shownStart = start;
         shownLoading = loading;
         shownRouting = routing;
+        shownSyn = syn;
+        shownStatus = status;
         repaint();
     }
+}
+
+juce::String SampleDisplay::synText() const
+{
+    const auto progress = processor.getSynProgress();
+    return progress.total > 0 ? "SYN " + juce::String (progress.done) + "/" + juce::String (progress.total) : "SYN";
+}
+
+juce::String SampleDisplay::statusText() const
+{
+    const auto fit = processor.getFitProgress (pad);
+    if (fit >= 0.0f)
+        return "fitting... " + juce::String (juce::roundToInt (fit * 100.0f)) + " %";
+
+    if (processor.isPadSynth (pad))
+        if (const auto& params = processor.getPadSynthParams (pad))
+            return juce::String ("synth ") + transmute::modelTitle (params->model);
+
+    return {};
+}
+
+juce::Rectangle<float> SampleDisplay::synBounds() const
+{
+    const auto inner = getLocalBounds().toFloat().reduced (14.0f, 10.0f);
+    const auto width = shownSyn.length() > 3 ? 62.0f : 34.0f;
+    return { inner.getRight() - width, inner.getY(), width, 15.0f };
 }
 
 juce::String SampleDisplay::routingText() const
@@ -62,8 +92,15 @@ juce::String SampleDisplay::routingText() const
     return text;
 }
 
-void SampleDisplay::mouseDown (const juce::MouseEvent&)
+void SampleDisplay::mouseDown (const juce::MouseEvent& event)
 {
+    if (synBounds().contains (event.position))
+    {
+        processor.transmuteAll();
+        refresh();
+        return;
+    }
+
     processor.playPad (pad, 1.0f);
 }
 
@@ -75,6 +112,24 @@ void SampleDisplay::paint (juce::Graphics& g)
     g.fillRoundedRectangle (bounds, 6.0f);
 
     auto inner = bounds.reduced (14.0f, 10.0f);
+
+    // SYN: lit when there is a sample to transmute, its count while it runs.
+    {
+        const auto button = synBounds();
+        const auto anything = [this]
+        {
+            for (int p = 0; p < KitParams::numPads; ++p)
+                if (processor.canTransmute (p))
+                    return true;
+            return false;
+        }();
+
+        g.setColour (anything ? Palette::displayText : Palette::displayDim);
+        g.drawRoundedRectangle (button.reduced (0.5f), 3.0f, 1.0f);
+        g.setFont (Palette::mono (10.5f, true));
+        g.drawText (shownSyn.isEmpty() ? synText() : shownSyn, button, juce::Justification::centred);
+    }
+
     auto info  = inner.removeFromLeft (200.0f);
     inner.removeFromLeft (12.0f);
 
@@ -117,8 +172,28 @@ void SampleDisplay::paint (juce::Graphics& g)
 
         g.setFont (Palette::mono (11.0f));
         g.setColour (Palette::displayDim);
-        g.drawText (seconds + utf8 (" \xc2\xb7 ") + rate + utf8 (" \xc2\xb7 ") + channels,
-                    info.removeFromTop (16.0f), juce::Justification::topLeft);
+
+        // The last line: a fit under way, or why one failed, or the facts -
+        // a synth's model in place of its channels (it is mono, and made here).
+        const auto status = statusText();
+        const auto& error = processor.getSynthError (pad);
+        const auto line = info.removeFromTop (16.0f);
+
+        if (status.startsWith ("fitting"))
+        {
+            g.setColour (Palette::displayText);
+            g.drawText (status, line, juce::Justification::topLeft);
+        }
+        else if (error.isNotEmpty())
+        {
+            g.setColour (Palette::warning);
+            g.drawFittedText (error, line.toNearestInt(), juce::Justification::topLeft, 1, 0.8f);
+        }
+        else
+        {
+            const auto last = processor.isPadSynth (pad) ? status : channels;
+            g.drawText (seconds + utf8 (" \xc2\xb7 ") + rate + utf8 (" \xc2\xb7 ") + last, line, juce::Justification::topLeft);
+        }
     }
 
     // Right: the waveform, drawn as a filled min/max band around a centre line.
@@ -181,5 +256,15 @@ void SampleDisplay::paint (juce::Graphics& g)
     {
         g.setColour (Palette::padText);
         g.fillRect (juce::Rectangle<float> (startX - 0.75f, wave.getY(), 1.5f, wave.getHeight()));
+    }
+
+    // A fit under way: a bar across the waveform, left to right, as far as it has got.
+    if (const auto fit = processor.getFitProgress (pad); fit >= 0.0f)
+    {
+        const auto bar = wave.withWidth (wave.getWidth() * juce::jlimit (0.0f, 1.0f, fit));
+        g.setColour (Palette::displayText.withAlpha (0.22f));
+        g.fillRect (bar);
+        g.setColour (Palette::displayText.withAlpha (0.7f));
+        g.fillRect (bar.withLeft (bar.getRight() - 1.5f));   // its leading edge
     }
 }

@@ -10,6 +10,12 @@
 namespace
 {
     const juce::String dragPrefix = "kitbox-pad:";
+
+    /** Menu ids of the Sample / Auto / model items, in PadSources::all's order. */
+    constexpr int sourceItem = 100;
+
+    /** The SMP / SYN switch, bottom right. */
+    constexpr float toggleWidth = 30.0f, toggleHeight = 14.0f;
 }
 
 PadButton::PadButton (KitboxProcessor& processorToUse, int padIndex)
@@ -50,6 +56,52 @@ void PadButton::setDropHover (bool hover)
     repaint();
 }
 
+juce::Rectangle<float> PadButton::toggleBounds() const
+{
+    // The top right of the text area paint() lays out, beside the note;
+    // raised a little so its letters sit on the note's line.
+    const auto text = getLocalBounds().toFloat().reduced (1.0f).reduced (10.0f, 8.0f).withTrimmedTop (4.0f);
+    return { text.getRight() - toggleWidth, text.getY() - 2.0f, toggleWidth, toggleHeight };
+}
+
+bool PadButton::toggleVisible() const
+{
+    return processor.getPadOriginal (index) != nullptr && ! processor.isPadLoading (index)
+        && processor.getPadError (index).isEmpty();
+}
+
+bool PadButton::toggleEnabled() const
+{
+    return toggleVisible() && processor.canTransmute (index);
+}
+
+void PadButton::toggleSource()
+{
+    const auto current = processor.getPadSource (index);
+
+    if (current == PadSource::sample)
+    {
+        processor.setPadSource (index, lastSynthSource);
+    }
+    else
+    {
+        lastSynthSource = current;
+        processor.setPadSource (index, PadSource::sample);
+    }
+}
+
+int PadButton::sourceState() const
+{
+    // What the switch shows, as bits: a fit's progress sends no change
+    // message, so updateFlash() compares this instead.
+    return (toggleVisible() ? 1 : 0)
+         | (toggleEnabled() ? 2 : 0)
+         | (processor.getPadSource (index) == PadSource::sample ? 4 : 0)
+         | (processor.isPadSynth (index) ? 8 : 0)
+         | (processor.getFitProgress (index) >= 0.0f ? 16 : 0)
+         | (processor.getSynthError (index).isNotEmpty() ? 32 : 0);
+}
+
 void PadButton::updateFlash()
 {
     // The note and choke group are drawn on the pad; a learnt note or a
@@ -57,10 +109,13 @@ void PadButton::updateFlash()
     const auto note  = processor.getPadNote (index);
     const auto choke = (int) processor.parameters.getRawParameterValue (KitParams::padId (index, KitParams::Pad::choke))->load();
 
-    if (note != shownNote || choke != shownChoke)
+    const auto state = sourceState();
+
+    if (note != shownNote || choke != shownChoke || state != shownSourceState)
     {
         shownNote = note;
         shownChoke = choke;
+        shownSourceState = state;
         repaint();
     }
 
@@ -111,10 +166,23 @@ void PadButton::paint (juce::Graphics& g)
     auto text = bounds.reduced (10.0f, 8.0f);
     text.removeFromTop (4.0f);
 
-    const auto textColour = flash > 0.45f ? Palette::pad : Palette::padText;
+    const auto inverted = flash > 0.45f;
+    const auto textColour = inverted ? Palette::pad : Palette::padText;
 
+    // The switch's colour: grey for the sample, orange for the synth, red when
+    // its fit failed, faint where the sample is too long to model.
+    const auto synth = toggleVisible() && processor.getPadSource (index) != PadSource::sample;
+    auto toggleColour = Palette::padTextDim;
+    if (toggleVisible() && ! toggleEnabled())
+        toggleColour = Palette::padTextDim.withAlpha (0.4f);
+    else if (synth)
+        toggleColour = processor.getSynthError (index).isNotEmpty() ? Palette::warning : Palette::accent;
+    if (inverted)
+        toggleColour = Palette::pad;
+
+    // The number and note: always orange.
     g.setFont (Palette::mono (11.0f, true));
-    g.setColour (flash > 0.45f ? Palette::pad : Palette::padTextDim);
+    g.setColour (inverted ? Palette::pad : Palette::accent);
     auto topRow = text.removeFromTop (14.0f);
     g.drawText (juce::String (index + 1).paddedLeft ('0', 2), topRow, juce::Justification::topLeft);
 
@@ -124,8 +192,11 @@ void PadButton::paint (juce::Graphics& g)
     if (chokeGroup > 0)
         noteText = "CH" + juce::String (chokeGroup) + "  " + noteText;
 
+    // Left of the switch, whose place is kept on an empty pad too so the
+    // notes line up; squeezed a little when a choke group makes it long.
     g.setFont (Palette::mono (10.5f));
-    g.drawText (noteText, topRow, juce::Justification::topRight);
+    g.drawFittedText (noteText, topRow.withTrimmedLeft (18.0f).withTrimmedRight (toggleWidth + 5.0f).toNearestInt(),
+                      juce::Justification::topRight, 1, 0.75f);
 
     juce::String name;
     auto nameColour = textColour;
@@ -150,14 +221,49 @@ void PadButton::paint (juce::Graphics& g)
         nameColour = Palette::padTextDim.withAlpha (0.7f);
     }
 
+    const auto nameArea = text.removeFromBottom (28.0f);
+
+    // Top right: SMP or SYN. Filled once the synth plays, an outline while
+    // it fits; faint where the sample is too long to model.
+    if (toggleVisible())
+    {
+        const auto toggle = toggleBounds();
+        const auto filled = synth && processor.isPadSynth (index) && ! inverted;
+
+        g.setColour (toggleColour);
+        if (filled)
+            g.fillRoundedRectangle (toggle, 3.0f);
+        else
+            g.drawRoundedRectangle (toggle.reduced (0.5f), 3.0f, 1.0f);
+
+        g.setColour (filled ? Palette::pad : toggleColour);
+        g.setFont (Palette::mono (10.0f, true));
+        g.drawText (synth ? "SYN" : "SMP", toggle, juce::Justification::centred);
+    }
+
     g.setFont (Palette::label (11.0f));
     g.setColour (nameColour);
-    g.drawFittedText (name, text.removeFromBottom (28.0f).toNearestInt(), juce::Justification::bottomLeft, 2, 0.85f);
+    g.drawFittedText (name, nameArea.toNearestInt(), juce::Justification::bottomLeft, 2, 0.85f);
 }
 
 void PadButton::mouseDown (const juce::MouseEvent& event)
 {
     dragStarted = false;
+    toggleHit = false;
+
+    // The switch: the pad selected, not played.
+    if (! event.mods.isPopupMenu() && toggleVisible() && toggleBounds().contains (event.position))
+    {
+        toggleHit = true;
+
+        if (onSelect)
+            onSelect (index);
+
+        if (toggleEnabled())
+            toggleSource();
+
+        return;
+    }
 
     if (event.mods.isPopupMenu())
     {
@@ -177,7 +283,7 @@ void PadButton::mouseDown (const juce::MouseEvent& event)
 
 void PadButton::mouseDrag (const juce::MouseEvent& event)
 {
-    if (dragStarted || event.mods.isPopupMenu() || event.getDistanceFromDragStart() < 6)
+    if (dragStarted || toggleHit || event.mods.isPopupMenu() || event.getDistanceFromDragStart() < 6)
         return;
 
     if (processor.getPadSample (index) == nullptr)
@@ -250,6 +356,31 @@ void PadButton::showMenu()
     menu.addItem (3, "Rename...", processor.getPadSample (index) != nullptr);
     menu.addItem (2, "Clear Pad", processor.getPadSample (index) != nullptr);
 
+    // What the pad plays: the sample, or Transmute's synth of it.
+    menu.addSeparator();
+    const auto current = processor.getPadSource (index);
+    const auto modelled = processor.canTransmute (index);
+
+    for (size_t i = 0; i < PadSources::all.size(); ++i)
+    {
+        const auto source = PadSources::all[i];
+        juce::String text;
+
+        if (source == PadSource::sample)
+            text = "Sample";
+        else if (source == PadSource::automatic)
+            text = processor.getSuggestedModel (index) ? juce::String ("Auto (") + transmute::modelTitle (*processor.getSuggestedModel (index)) + ")"
+                                                       : juce::String ("Auto");
+        else
+            text = transmute::modelTitle (*PadSources::model (source));
+
+        menu.addItem (sourceItem + (int) i, text, source == PadSource::sample || modelled, source == current);
+    }
+
+    // The whole kit's files, not just this pad's: the same folders as in the container.
+    menu.addSeparator();
+    menu.addItem (4, "Export Samples...", processor.hasAnySample());
+
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
                         [safe = juce::Component::SafePointer<PadButton> (this)] (int result)
     {
@@ -265,6 +396,18 @@ void PadButton::showMenu()
         if (result == 3)
         {
             safe->showRename();
+            return;
+        }
+
+        if (result == 4)
+        {
+            safe->exportSamples();
+            return;
+        }
+
+        if (result >= sourceItem && result < sourceItem + (int) PadSources::all.size())
+        {
+            safe->processor.setPadSource (safe->index, PadSources::all[(size_t) (result - sourceItem)]);
             return;
         }
 
@@ -292,9 +435,35 @@ void PadButton::showMenu()
     });
 }
 
+void PadButton::exportSamples()
+{
+    // A save panel, its name the new folder's: the place and the name chosen
+    // in one step, as a Finder "New Folder" would need two.
+    const auto kit = processor.getKitName();
+    const auto suggested = juce::File::createLegalFileName ((kit.isNotEmpty() ? kit : juce::String ("Kitbox")) + " Samples");
+
+    chooser = std::make_unique<juce::FileChooser> ("Export Samples",
+                                                   juce::File::getSpecialLocation (juce::File::userDesktopDirectory).getChildFile (suggested));
+
+    chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
+                          [safe = juce::Component::SafePointer<PadButton> (this)] (const juce::FileChooser& fc)
+    {
+        if (safe == nullptr || fc.getResult() == juce::File())
+            return;
+
+        const auto result = safe->processor.exportSamples (fc.getResult());
+
+        if (result.failed())
+            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
+                                                    "Export Samples", result.getErrorMessage());
+        else
+            fc.getResult().revealToUser();
+    });
+}
+
 void PadButton::showRename()
 {
-    const auto sample = processor.getPadSample (index);
+    const auto sample = processor.getPadOriginal (index);
 
     if (sample == nullptr)
         return;

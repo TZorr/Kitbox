@@ -16,7 +16,13 @@
 //  - swapping two pads swaps samples and knobs;
 //  - dragging a pad out hands over the original file, byte for byte;
 //  - files dropped on a pad load on the loader thread, fill the following
-//    pads, and do so in the Finder's name order.
+//    pads, and do so in the Finder's name order;
+//  - Transmute on a pad: the sample plays until the fit is in, then the
+//    synth; Sample and back switch without fitting again; a pad cleared
+//    mid-fit drops the result; SYN fits every pad that can be modelled; a
+//    session and a .kitbox bring synths back without fitting, and the
+//    .kitbox is a ZIP that unzip accepts, with the files where KitFile.h
+//    says they are.
 //
 //  The render is the other half. A panel is arithmetic on rectangles, which is
 //  obviously right while reading it and obviously wrong once drawn - look at
@@ -29,6 +35,7 @@
 
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
+#include "UI/PadButton.h"
 
 #include <cstdio>
 
@@ -500,6 +507,197 @@ namespace
     }
 }
 
+namespace
+{
+    /** Pumps the message loop until no pad is fitting. */
+    bool waitForFits (KitboxProcessor& processor, int seconds = 120)
+    {
+        for (int wait = 0; wait < seconds * 20; ++wait)
+        {
+            bool busy = false;
+            for (int pad = 0; pad < KitParams::numPads; ++pad)
+                busy = busy || processor.getFitProgress (pad) >= 0.0f;
+
+            if (! busy)
+            {
+                processor.takeTransmuteResults();
+                return true;
+            }
+
+            pump (50);
+        }
+        return false;
+    }
+
+    bool anyFitting (KitboxProcessor& processor)
+    {
+        for (int pad = 0; pad < KitParams::numPads; ++pad)
+            if (processor.getFitProgress (pad) >= 0.0f)
+                return true;
+        return false;
+    }
+
+    void checkTransmute()
+    {
+        using transmute::DrumModel;
+
+        KitboxProcessor processor;
+        processor.prepareToPlay (48000.0, 512);
+        processor.setPadSample (0, kick());
+        processor.setPadSample (1, snare());
+        processor.setPadSample (2, tone (300.0, 0.5, 12.0, "Too Long"));
+        const auto original = processor.getPadOriginal (0);
+
+        check (processor.canTransmute (0) && ! processor.canTransmute (2), "a hit can be transmuted, a 12 s sample cannot");
+
+        processor.setPadSource (0, PadSource::automatic);
+        check (processor.getFitProgress (0) >= 0.0f && processor.getPadSample (0) == original,
+               "on Auto, the pad plays its sample while it fits");
+        check (waitForFits (processor), "the fit finishes");
+
+        const auto firstSynth = processor.getPadSynth (0);
+        const auto& params = processor.getPadSynthParams (0);
+        check (firstSynth != nullptr && processor.isPadSynth (0) && processor.getPadSample (0) == firstSynth,
+               "then the pad plays the synth");
+        check (params && processor.getSuggestedModel (0) && params->model == *processor.getSuggestedModel (0),
+               "Auto fits the model the hit suggests",
+               params ? juce::String (transmute::modelTitle (params->model)) : juce::String ("no params"));
+        check (firstSynth != nullptr && juce::exactlyEqual (firstSynth->getSampleRate(), original->getSampleRate())
+                   && firstSynth->getName() == original->getName() && firstSynth->getFileName() == original->getName() + ".wav",
+               "the synth is rendered at the sample's rate, under its name");
+
+        processor.setPadSource (0, PadSource::sample);
+        check (processor.getPadSample (0) == original && processor.getFitProgress (0) < 0.0f, "Sample switches back at once");
+        processor.setPadSource (0, PadSource::automatic);
+        check (processor.getPadSample (0) == firstSynth && processor.getFitProgress (0) < 0.0f, "and Auto again needs no new fit");
+
+        processor.setPadSource (0, PadSource::modal);
+        check (processor.getFitProgress (0) >= 0.0f && processor.getPadSample (0) == original,
+               "another model fits again, the sample playing meanwhile");
+        waitForFits (processor);
+        check (processor.getPadSynthParams (0) && processor.getPadSynthParams (0)->model == DrumModel::modal,
+               "and the synth is that model");
+        processor.setPadSource (0, PadSource::automatic);
+        waitForFits (processor);
+
+        processor.setPadSource (2, PadSource::kick);
+        check (processor.getPadSource (2) == PadSource::sample && processor.getSynthError (2).isNotEmpty(),
+               "a sample too long to model stays a sample, and says why");
+
+        processor.setPadSource (1, PadSource::automatic);
+        processor.clearPad (1);
+        waitForFits (processor);
+        check (processor.getPadSample (1) == nullptr && processor.getPadSynth (1) == nullptr,
+               "a pad cleared mid-fit stays empty");
+        processor.setPadSample (1, snare());
+        check (processor.getFitProgress (1) >= 0.0f, "a new sample on a pad set to Auto is fitted");
+        waitForFits (processor);
+        check (processor.isPadSynth (1), "and plays as a synth");
+
+        // Swap and drag out - with the synth as it is now: Auto after Modal fitted again.
+        const auto synth = processor.getPadSynth (0);
+        processor.swapPads (0, 5);
+        check (processor.isPadSynth (5) && processor.getPadSynth (5) == synth && processor.getPadSource (5) == PadSource::automatic
+                   && processor.getPadSample (0) == nullptr && processor.getFitProgress (5) < 0.0f,
+               "a swap moves the synth and the choice, without fitting again");
+
+        {
+            const auto dragged = processor.writeSampleForDrag (5);
+            juce::MemoryBlock bytes;
+            dragged.loadFileAsData (bytes);
+            check (dragged.getFileName() == synth->getFileName() && bytes == synth->getOriginal(),
+                   "a pad dragged out hands over what it plays: the synth's WAV", dragged.getFileName());
+        }
+
+        // Export Samples: the container's folders, on disk.
+        {
+            const auto exported = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("EditorShot export");
+            exported.deleteRecursively();
+            check (processor.exportSamples (exported).wasOk(), "Export Samples writes a folder");
+
+            juce::MemoryBlock originalBytes, synthBytes;
+            exported.getChildFile ("Original/06 Kick 909.wav").loadFileAsData (originalBytes);
+            exported.getChildFile ("Synth/06 Kick 909.wav").loadFileAsData (synthBytes);
+            const auto exportedParams = transmute::DrumParams::fromJson (
+                exported.getChildFile ("Synth/06 Kick 909.drumparams").loadFileAsString().toStdString());
+
+            check (originalBytes == original->getOriginal() && synthBytes == synth->getOriginal()
+                       && exportedParams == processor.getPadSynthParams (5),
+                   "with each sample, synth and .drumparams byte for byte");
+            check (exported.getChildFile ("Original/03 Too Long.wav").existsAsFile()
+                       && ! exported.getChildFile ("Synth/03 Too Long.wav").exists()
+                       && exported.getChildFile ("Original").getNumberOfChildFiles (juce::File::findFiles) == 3,
+                   "a sample without a synth, and nothing for empty pads");
+            exported.deleteRecursively();
+        }
+
+        // The session: a ZIP, synths back without fitting.
+        juce::MemoryBlock state;
+        processor.getStateInformation (state);
+        check (state.getSize() > 4 && std::memcmp (state.getData(), "PK\3\4", 4) == 0, "the session state is a ZIP");
+
+        {
+            juce::ZipFile zip (std::make_unique<juce::MemoryInputStream> (state, false));
+            juce::StringArray names;
+            for (int i = 0; i < zip.getNumEntries(); ++i)
+                names.add (zip.getEntry (i)->filename);
+
+            check (names.contains ("kit.xml") && names.contains ("Original/06 Kick 909.wav")
+                       && names.contains ("Synth/06 Kick 909.wav") && names.contains ("Synth/06 Kick 909.drumparams")
+                       && names.contains ("Original/03 Too Long.wav") && ! names.contains ("Synth/03 Too Long.wav"),
+                   "with every pad's sample, synth and parameters where KitFile.h says", names.joinIntoString (", "));
+        }
+
+        KitboxProcessor restored;
+        restored.setStateInformation (state.getData(), (int) state.getSize());
+        check (! anyFitting (restored), "a restored session fits nothing");
+        check (restored.isPadSynth (5) && restored.getPadSource (5) == PadSource::automatic
+                   && restored.getPadSynth (5)->getOriginal() == synth->getOriginal()
+                   && restored.getPadSynthParams (5) == processor.getPadSynthParams (5)
+                   && restored.getSuggestedModel (5) == processor.getSuggestedModel (5),
+               "it plays the same synth, made from the same parameters");
+        check (restored.getPadOriginal (5)->getOriginal() == original->getOriginal() && restored.getPadSource (2) == PadSource::sample,
+               "and keeps the original sample beside it");
+
+        // Save Kit as .kitbox: the bare ZIP, which unzip accepts and Load Kit reads.
+        const auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("EditorShot kitbox");
+        folder.deleteRecursively();
+        folder.createDirectory();
+        const auto kitFile = folder.getChildFile ("Synth Kit.kitbox");
+        check (processor.saveKit (kitFile).wasOk(), "Save Kit writes a .kitbox");
+
+        {
+            juce::ChildProcess unzip;
+            const auto started = unzip.start (juce::StringArray { "/usr/bin/unzip", "-t", kitFile.getFullPathName() });
+            const auto output = started ? unzip.readAllProcessOutput() : juce::String();
+            check (started && unzip.getExitCode() == 0 && output.contains ("No errors"), "unzip finds no errors in it", output.trim());
+        }
+
+        KitboxProcessor fromKit;
+        check (fromKit.loadKit (kitFile).wasOk() && fromKit.isPadSynth (5) && ! anyFitting (fromKit), "and Load Kit brings its synths back");
+
+        const auto preset = folder.getChildFile ("Synth Kit.aupreset");
+        KitboxProcessor fromPreset;
+        check (processor.saveKit (preset).wasOk() && fromPreset.loadKit (preset).wasOk() && fromPreset.isPadSynth (5),
+               "so does an .aupreset");
+        folder.deleteRecursively();
+
+        // SYN.
+        KitboxProcessor syn;
+        syn.setPadSample (0, kick());
+        syn.setPadSample (3, hat (0.03, "Hat"));
+        syn.setPadSample (7, clap());
+        syn.setPadSample (9, tone (300.0, 0.5, 12.0, "Too Long"));
+        syn.transmuteAll();
+        check (syn.getSynProgress().total == 3 && syn.getSynProgress().done == 0, "SYN starts every pad it can model",
+               juce::String (syn.getSynProgress().done) + "/" + juce::String (syn.getSynProgress().total));
+        waitForFits (syn);
+        check (syn.isPadSynth (0) && syn.isPadSynth (3) && syn.isPadSynth (7) && ! syn.isPadSynth (9)
+                   && syn.getPadSource (9) == PadSource::sample && syn.getSynProgress().total == 0,
+               "and when it is done, they play their synths");
+    }
+}
+
 int main (int argc, char** argv)
 {
     const juce::ScopedJuceInitialiser_GUI juceInitialiser;
@@ -521,6 +719,8 @@ int main (int argc, char** argv)
     checkMultiOutAndLearn();
     std::printf ("Dropped files...\n");
     checkDroppedFiles();
+    std::printf ("Transmute...\n");
+    checkTransmute();
 
     // The panel, with a kit on it and a few pads mid-flash.
     {
@@ -564,6 +764,68 @@ int main (int argc, char** argv)
         // A kit left on disk for build.sh to hand to plutil: macOS's own
         // parser, not ours, decides whether the file is a valid preset.
         check (processor.saveKit (outputDirectory.getChildFile ("Demo Kit.aupreset")).wasOk(), "the demo kit saves");
+
+        // SYN under way, and done.
+        processor.transmuteAll();
+        pump (400);
+        check (writePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f),
+                         outputDirectory.getChildFile ("kitbox-fitting.png")), "the panel renders mid-SYN");
+        waitForFits (processor);
+        pump (100);
+        check (writePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f),
+                         outputDirectory.getChildFile ("kitbox-synth.png")), "and after it");
+
+        // The pad's SMP / SYN switch: flips what the pad plays, and plays nothing.
+        {
+            std::vector<PadButton*> padButtons;
+            for (auto* child : editor->getChildren())
+                if (auto* button = dynamic_cast<PadButton*> (child))
+                    padButtons.push_back (button);
+
+            const auto click = [] (PadButton& button)
+            {
+                const auto position = button.toggleBounds().getCentre();
+                const auto now = juce::Time::getCurrentTime();
+                const juce::MouseEvent event (juce::Desktop::getInstance().getMainMouseSource(), position, juce::ModifierKeys(),
+                                              juce::MouseInputSource::defaultPressure, juce::MouseInputSource::defaultOrientation,
+                                              juce::MouseInputSource::defaultRotation, juce::MouseInputSource::defaultTiltX,
+                                              juce::MouseInputSource::defaultTiltY, &button, &button, now, position, now, 1, false);
+                button.mouseDown (event);
+                button.mouseUp (event);
+            };
+
+            int pad = -1;
+            for (int p = 0; p < KitParams::numPads && pad < 0; ++p)
+                if (processor.isPadSynth (p))
+                    pad = p;
+
+            check (padButtons.size() == (size_t) KitParams::numPads && pad >= 0, "the editor has sixteen pads, one playing its synth");
+
+            if (pad >= 0 && padButtons.size() == (size_t) KitParams::numPads)
+            {
+                auto& button = *padButtons[(size_t) pad];
+                const auto hits = processor.getEngine().getHitCount (pad);
+
+                check (button.toggleVisible() && button.toggleEnabled(), "a pad that can be modelled shows the switch");
+                click (button);
+                renderBlocks (processor, 2);
+                check (processor.getPadSource (pad) == PadSource::sample && ! processor.isPadSynth (pad)
+                           && processor.getEngine().getHitCount (pad) == hits,
+                       "SYN -> SMP plays the sample, without a hit");
+
+                processor.setPadSource (pad, PadSource::snare);
+                click (button);
+                check (processor.getPadSource (pad) == PadSource::sample, "a chosen model switches to SMP too");
+                click (button);
+                check (processor.getPadSource (pad) == PadSource::snare, "and SMP -> SYN brings that model back");
+                pump (400);
+                check (writePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f),
+                                 outputDirectory.getChildFile ("kitbox-toggle.png")), "the panel renders with a pad fitting again");
+                waitForFits (processor);
+
+                check (! padButtons[15]->toggleVisible() || processor.getPadOriginal (15) != nullptr, "an empty pad shows no switch");
+            }
+        }
 
         processor.editorBeingDeleted (editor.get());
         editor.reset();
