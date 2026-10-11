@@ -9,6 +9,22 @@
 
 namespace
 {
+    /** The panel's theme is the user's, not the kit's: it lives in
+        ~/Library/Application Support/Kitbox/Kitbox.settings, shared by every
+        instance and every project, and never travels with a kit or session. */
+    std::unique_ptr<juce::PropertiesFile> openSettings()
+    {
+        juce::PropertiesFile::Options options;
+        options.applicationName     = JucePlugin_Name;
+        options.filenameSuffix      = ".settings";
+        options.folderName          = JucePlugin_Name;
+        options.osxLibrarySubFolder = "Application Support";
+        options.getDefaultFile().getParentDirectory().createDirectory();
+        return std::make_unique<juce::PropertiesFile> (options);
+    }
+
+    constexpr const char* darkModeKey = "darkMode";
+
     constexpr int margin = 16;
     constexpr int sectionGap = 10;
     constexpr int sectionPadding = 8;
@@ -89,6 +105,14 @@ KitboxEditor::KitboxEditor (KitboxProcessor& p)
 
     refreshFxLabels();
 
+    // The saved theme first, so the first paint is already the right one.
+    Palette::setDark (openSettings()->getBoolValue (darkModeKey, false));
+    shownDark = Palette::dark;
+    darkButton.active = Palette::dark;
+    darkButton.setTooltip ("Dark panel on / off");
+    darkButton.onClick = [this] { setDarkMode (! Palette::dark); };
+    addAndMakeVisible (darkButton);
+
     addAndMakeVisible (display);
     addAndMakeVisible (loadButton);
     addAndMakeVisible (saveButton);
@@ -140,6 +164,21 @@ void KitboxEditor::selectPad (int pad)
 
     display.setPad (selectedPad);
     bindPadKnobs();
+    repaint();
+}
+
+void KitboxEditor::setDarkMode (bool shouldBeDark)
+{
+    Palette::setDark (shouldBeDark);
+
+    if (auto settings = openSettings())
+    {
+        settings->setValue (darkModeKey, shouldBeDark);
+        settings->saveIfNeeded();
+    }
+
+    shownDark = shouldBeDark;
+    darkButton.active = shouldBeDark;
     repaint();
 }
 
@@ -218,6 +257,14 @@ void KitboxEditor::timerCallback()
 
     display.refresh();
     refreshFxLabels();
+
+    // Another Kitbox window may have switched the theme: it is process-wide.
+    if (shownDark != Palette::dark)
+    {
+        shownDark = Palette::dark;
+        darkButton.active = shownDark;
+        repaint();
+    }
 
     const auto learning = kitbox.getLearnPad() >= 0;
     if (learnButton.active != learning)
@@ -356,6 +403,9 @@ void KitboxEditor::resized()
     auto header = area.removeFromTop (86);
     wordmarkArea = header.removeFromLeft (180);
     header.removeFromLeft (10);
+
+    // Under the wordmark and its subtitle, which end 66 points down.
+    darkButton.setBounds (wordmarkArea.getX(), wordmarkArea.getY() + 67, 52, 17);
 
     globalArea = header.removeFromRight (196);
     header.removeFromRight (12);

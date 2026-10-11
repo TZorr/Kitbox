@@ -945,7 +945,7 @@ namespace
 
         // Version 1, as Kitbox wrote it up to 0.6 and Transmute's Export Kitbox Kit still does.
         {
-            const auto file = juce::File (KITBOX_SOURCE_DIR).getChildFile ("Kits/Transmute Kit.aupreset");
+            const auto file = juce::File (KITBOX_SOURCE_DIR).getChildFile ("Verification/Version 1 Kit.aupreset");
             const auto preset = AuPreset::read (file.loadFileAsString());
             const auto old = KitFile::read (preset.pluginState.getData(), preset.pluginState.getSize());
             int filled = 0;

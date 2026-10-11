@@ -10,6 +10,11 @@ Transmute's synth of it.
 
 <img src="screenshot.png" width="700" alt="Kitbox in Logic Pro, with SMP / SYN on every pad">
 
+<img src="screenshot-dark.png" width="700" alt="Kitbox in Logic Pro with the dark panel">
+
+**Dark** under the wordmark switches the panel to dark; the choice is yours,
+not the kit's - every Kitbox window and project opens the way you left it.
+
 ## Install
 
 Download `Kitbox.0.7.1.pkg` from

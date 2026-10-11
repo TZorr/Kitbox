@@ -34,6 +34,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "PluginEditor.h"
+#include "UI/Palette.h"
 #include "PluginProcessor.h"
 #include "UI/PadButton.h"
 
@@ -757,9 +758,21 @@ int main (int argc, char** argv)
 
         pump (60);
 
+        // Whatever theme this Mac's user picked, the reference shot is light;
+        // the dark one beside it. Palette::setDark, not the button, so the
+        // user's setting is left alone.
+        Palette::setDark (false);
+        editor->repaint();
         const auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f);
         const auto file = outputDirectory.getChildFile ("kitbox.png");
         check (writePng (image, file), "the panel renders to " + file.getFullPathName());
+
+        Palette::setDark (true);
+        editor->repaint();
+        check (writePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f),
+                         outputDirectory.getChildFile ("kitbox-dark.png")), "the panel renders dark");
+        Palette::setDark (false);
+        editor->repaint();
 
         // A kit left on disk for build.sh to hand to plutil: macOS's own
         // parser, not ours, decides whether the file is a valid preset.

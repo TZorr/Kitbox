@@ -82,6 +82,7 @@ private:
     void layoutRow (std::vector<Section*> row, juce::Rectangle<int> area);
     void loadKit();
     void saveKit();
+    void setDarkMode (bool shouldBeDark);
 
     KitboxProcessor& kitbox;
     int selectedPad = 0;
@@ -109,6 +110,8 @@ private:
 
     SampleDisplay display;
     FlatButton loadButton { "Load Kit" }, saveButton { "Save Kit" }, learnButton { "Learn Note" };
+    FlatButton darkButton { "Dark" };
+    bool shownDark = false;
     juce::Rectangle<int> wordmarkArea, globalArea, footerArea;
 
     std::vector<std::unique_ptr<PadButton>> pads;
