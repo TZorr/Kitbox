@@ -8,6 +8,8 @@ drum hits as clean synth voices and hands a whole kit over in one step:
 notes. Since 0.7.0 its engine is in Kitbox too: each pad plays its sample or
 Transmute's synth of it.
 
+Family: [Rackbox](https://github.com/TZorr/Rackbox) (four-slot multi-effect), [Rackbox Plus](https://github.com/TZorr/RackboxPlus) (the same rack, eight knobs per effect), [FMBox](https://github.com/TZorr/FMBox) (eight-sound FM drum synth), [Chordbox](https://github.com/TZorr/Chordbox) (16-pad chord generator), [Transmute](https://github.com/TZorr/Transmute) (drum resynthesis).
+
 <img src="screenshot.png" width="700" alt="Kitbox in Logic Pro, with SMP / SYN on every pad">
 
 <img src="screenshot-dark.png" width="700" alt="Kitbox in Logic Pro with the dark panel">
