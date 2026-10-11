@@ -48,7 +48,8 @@ cmake_minimum_required(VERSION 3.22)
 # (right-click > Sample / Auto / a model; SYN for every pad); the kit container
 # became a ZIP holding originals, synths and their .drumparams.
 # 0.7.1: right-click > Export Samples... writes them into a folder.
-project(Kitbox VERSION 0.7.1)
+# 0.7.2: a Dark panel, switched under the wordmark and kept per user.
+project(Kitbox VERSION 0.7.2)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

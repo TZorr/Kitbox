@@ -17,7 +17,7 @@ not the kit's - every Kitbox window and project opens the way you left it.
 
 ## Install
 
-Download `Kitbox.0.7.1.pkg` from
+Download `Kitbox.0.7.2.pkg` from
 [Releases](https://github.com/TZorr/Kitbox/releases) and run it; choose AU,
 VST3 or both - they go into `/Library/Audio/Plug-Ins`. Apple Silicon, macOS
 26.5 or later. The installer is unsigned, so Gatekeeper refuses it at first:
