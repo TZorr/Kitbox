@@ -2,12 +2,10 @@
 //  KitFile.h
 //  Kitbox
 //
-//  The .kitbox container: the plugin's session state, and the payload of a kit
-//  saved to disk (an .aupreset carries it under "jucePluginState" - see
-//  AuPreset.h), and a kit file of its own when Save Kit is given the .kitbox
-//  extension.
+//  The .kitbox container: the plugin's session state, and the kit file Save
+//  Kit writes and Load Kit reads.
 //
-//  One format for all three on purpose. A kit saved to disk and a kit saved
+//  One format for both on purpose. A kit saved to disk and a kit saved
 //  inside a Logic project hold the same things - every pad's sample, every
 //  knob, the effects - and a second format would be a second place for the
 //  two to drift apart. So getStateInformation writes a .kitbox into the host's

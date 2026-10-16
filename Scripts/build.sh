@@ -27,9 +27,8 @@ echo
 "$BUILD_DIR/EditorShot_artefacts/Release/EditorShot" "$BUILD_DIR/shots"
 
 echo
-echo "Checking the saved kit with macOS's own property-list parser:"
-plutil -lint "$BUILD_DIR/shots/Demo Kit.aupreset"
-plutil -p "$BUILD_DIR/shots/Demo Kit.aupreset" | grep -E '^  "(manufacturer|name|subtype|type|version)"'
+echo "Checking the saved kit with unzip, not with our own reader:"
+unzip -t "$BUILD_DIR/shots/Demo Kit.kitbox" | tail -1
 
 echo
 echo "Built:"

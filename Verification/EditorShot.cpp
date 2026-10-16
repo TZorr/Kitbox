@@ -228,16 +228,23 @@ namespace
                    "pad " + juce::String (pad + 1) + "'s sample survives byte for byte");
         }
 
-        // The same bytes through a kit on disk - an .aupreset, as Logic writes.
+        // The same bytes through a kit on disk.
         const auto temp = juce::File::getSpecialLocation (juce::File::tempDirectory);
-        const auto kitFile = temp.getChildFile ("EditorShot Kit.aupreset");
+        const auto kitFile = temp.getChildFile (juce::String ("EditorShot Kit") + KitFile::extension);
         check (original.saveKit (kitFile).wasOk(), "Save Kit writes");
         check (original.getProgramName (0) == "EditorShot Kit", "saving names the kit after the file, without extension",
                original.getProgramName (0));
 
-        const auto preset = AuPreset::read (kitFile.loadFileAsString());
-        check (preset.ok() && preset.name == "EditorShot Kit", "the file is an Audio Unit preset named without extension",
-               preset.name + " " + preset.error);
+        juce::MemoryBlock onDisk;
+        check (kitFile.loadFileAsData (onDisk) && onDisk.getSize() > 4 && onDisk[0] == 'P' && onDisk[1] == 'K',
+               "the file is the .kitbox container, a ZIP");
+
+        // Logic's preset file is Logic's: Load Kit refuses it and the kit stays.
+        const auto auPreset = temp.getChildFile ("EditorShot Logic.aupreset");
+        auPreset.replaceWithText ("<?xml version=\"1.0\"?><plist version=\"1.0\"><dict/></plist>");
+        check (original.loadKit (auPreset).failed() && original.getProgramName (0) == "EditorShot Kit",
+               "an .aupreset is refused");
+        auPreset.deleteFile();
 
         KitboxProcessor fromDisk;
         check (fromDisk.loadKit (kitFile).wasOk(), "Load Kit reads it back");
@@ -247,15 +254,15 @@ namespace
                "the kit's knobs and effect types load");
         check (fromDisk.getProgramName (0) == "EditorShot Kit", "and its name", fromDisk.getProgramName (0));
 
-        // What Logic hands over when it loads that preset from its own menu:
-        // the jucePluginState bytes, straight into setStateInformation.
+        // The file is what a session stores: its bytes, straight into
+        // setStateInformation, restore kit and name.
         KitboxProcessor viaHost;
-        viaHost.setStateInformation (preset.pluginState.getData(), (int) preset.pluginState.getSize());
+        viaHost.setStateInformation (onDisk.getData(), (int) onDisk.getSize());
         check (viaHost.getPadSample (0) != nullptr && viaHost.getProgramName (0) == "EditorShot Kit",
-               "a preset loaded by the host restores kit and name");
+               "a kit file handed to the host's restore brings back kit and name");
 
-        // A bare .kitbox from before still loads, and an old ".kitbox" inside a
-        // name is dropped.
+        // A session's state written to disk loads as a kit, and an old
+        // ".kitbox" inside a name is dropped.
         const auto legacy = temp.getChildFile ("Old.kitbox");
         juce::MemoryBlock legacyBytes;
         original.getStateInformation (legacyBytes);
@@ -677,10 +684,6 @@ namespace
         KitboxProcessor fromKit;
         check (fromKit.loadKit (kitFile).wasOk() && fromKit.isPadSynth (5) && ! anyFitting (fromKit), "and Load Kit brings its synths back");
 
-        const auto preset = folder.getChildFile ("Synth Kit.aupreset");
-        KitboxProcessor fromPreset;
-        check (processor.saveKit (preset).wasOk() && fromPreset.loadKit (preset).wasOk() && fromPreset.isPadSynth (5),
-               "so does an .aupreset");
         folder.deleteRecursively();
 
         // SYN.
@@ -774,9 +777,10 @@ int main (int argc, char** argv)
         Palette::setDark (false);
         editor->repaint();
 
-        // A kit left on disk for build.sh to hand to plutil: macOS's own
-        // parser, not ours, decides whether the file is a valid preset.
-        check (processor.saveKit (outputDirectory.getChildFile ("Demo Kit.aupreset")).wasOk(), "the demo kit saves");
+        // A kit left on disk for build.sh to hand to unzip: a tool that is not
+        // ours decides whether the file is a valid archive.
+        check (processor.saveKit (outputDirectory.getChildFile (juce::String ("Demo Kit") + KitFile::extension)).wasOk(),
+               "the demo kit saves");
 
         // SYN under way, and done.
         processor.transmuteAll();

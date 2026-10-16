@@ -500,16 +500,9 @@ juce::Result KitboxProcessor::saveKit (const juce::File& file)
 
     // replaceWithData writes a temporary file and moves it into place. Opening
     // the file with createOutputStream would append to an existing kit.
-    if (! file.getParentDirectory().createDirectory())
-        return juce::Result::fail ("Could not write " + file.getFullPathName());
-
-    // Given the .kitbox extension, the container itself: a ZIP whose samples
-    // anyone can unpack (see KitFile.h). Otherwise the .aupreset Logic lists.
-    const auto written = file.hasFileExtension (KitFile::extension)
-                       ? file.replaceWithData (state.getData(), state.getSize())
-                       : file.replaceWithText (AuPreset::write (state, getKitName()), false, false, "\n");
-
-    if (! written)
+    // The container itself: a ZIP whose samples anyone can unpack (KitFile.h).
+    if (! file.getParentDirectory().createDirectory()
+        || ! file.replaceWithData (state.getData(), state.getSize()))
         return juce::Result::fail ("Could not write " + file.getFullPathName());
 
     return juce::Result::ok();
@@ -522,29 +515,13 @@ juce::Result KitboxProcessor::loadKit (const juce::File& file)
     if (! file.loadFileAsData (block))
         return juce::Result::fail ("Could not read " + file.getFullPathName());
 
-    auto name = file.getFileNameWithoutExtension();
-
-    // Kits are .aupreset files; the .kitbox container is what they carry, and
-    // a bare .kitbox from the first days of the plugin still loads as it is.
-    if (file.hasFileExtension (AuPreset::extension))
-    {
-        const auto preset = AuPreset::read (block.toString());
-
-        if (! preset.ok())
-            return juce::Result::fail (preset.error);
-
-        block = preset.pluginState;
-        if (preset.name.isNotEmpty())
-            name = preset.name;
-    }
-
     const auto kit = KitFile::read (block.getData(), block.getSize());
 
     if (! kit.ok())
         return juce::Result::fail (kit.error);
 
     const auto result = applyKit (kit);
-    setKitName (name);
+    setKitName (file.getFileNameWithoutExtension());
     return result;
 }
 
@@ -555,7 +532,7 @@ juce::String KitboxProcessor::getKitName() const
 
 void KitboxProcessor::setKitName (const juce::String& newName)
 {
-    // Settings saved before kits were .aupreset files can carry the old
+    // Settings saved by Kitbox 0.5 and older can carry the old
     // extension inside their name ("KITBOX 808.kitbox"); it is not part of it.
     auto name = newName.trim();
     if (name.endsWithIgnoreCase (KitFile::extension))

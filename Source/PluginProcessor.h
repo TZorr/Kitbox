@@ -23,7 +23,6 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 
 #include "Engine/DrumEngine.h"
-#include "Engine/AuPreset.h"
 #include "Engine/KitFile.h"
 #include "Engine/PadSource.h"
 #include "Engine/PadTransmuter.h"
@@ -101,8 +100,8 @@ public:
         the timer; public so tests need not wait for it. */
     void applyLearnedNote();
 
-    /** Kits are .aupreset files (see AuPreset.h); loadKit also reads the
-        older bare .kitbox container. */
+    /** Kits are .kitbox files, the container a session stores too (see
+        KitFile.h). */
     juce::Result saveKit (const juce::File& file);
     juce::Result loadKit (const juce::File& file);
 

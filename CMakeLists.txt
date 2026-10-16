@@ -49,7 +49,7 @@ cmake_minimum_required(VERSION 3.22)
 # became a ZIP holding originals, synths and their .drumparams.
 # 0.7.1: right-click > Export Samples... writes them into a folder.
 # 0.7.2: a Dark panel, switched under the wordmark and kept per user.
-project(Kitbox VERSION 0.7.2)
+project(Kitbox VERSION 0.8.0)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -123,7 +123,6 @@ set(KITBOX_CORE_SOURCES
     Source/Engine/Fx/EffectCatalog.cpp
     Source/Engine/Fx/EffectBlock.cpp
     Source/Engine/KitFile.cpp
-    Source/Engine/AuPreset.cpp
     Source/Engine/PadTransmuter.cpp
     ${KITBOX_TRANSMUTE_SOURCES})
 

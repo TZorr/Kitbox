@@ -15,7 +15,6 @@
 
 #include "Engine/DrumEngine.h"
 #include "Engine/FxMigration.h"
-#include "Engine/AuPreset.h"
 #include "Engine/KitFile.h"
 #include "Engine/TptFilter.h"
 
@@ -945,14 +944,14 @@ namespace
 
         // Version 1, as Kitbox wrote it up to 0.6 and Transmute's Export Kitbox Kit still does.
         {
-            const auto file = juce::File (KITBOX_SOURCE_DIR).getChildFile ("Verification/Version 1 Kit.aupreset");
-            const auto preset = AuPreset::read (file.loadFileAsString());
-            const auto old = KitFile::read (preset.pluginState.getData(), preset.pluginState.getSize());
+            juce::MemoryBlock bytes;
+            juce::File (KITBOX_SOURCE_DIR).getChildFile ("Verification/Version 1 Kit.kitbox").loadFileAsData (bytes);
+            const auto old = KitFile::read (bytes.getData(), bytes.getSize());
             int filled = 0;
             for (const auto& stored : old.samples)
                 filled += stored.bytes.getSize() > 0 ? 1 : 0;
 
-            check (preset.ok() && old.ok() && old.version == 1 && filled > 0 && old.params.isValid(),
+            check (old.ok() && old.version == 1 && filled > 0 && old.params.isValid(),
                    "a version 1 kit (Transmute's export) still reads", old.error + " " + juce::String (filled) + " samples");
         }
 
@@ -960,30 +959,6 @@ namespace
         damaged[0] = 'X';
         check (! KitFile::read (damaged.getData(), damaged.getSize()).ok(), "a file that is not a kit is refused");
         check (! KitFile::read (block.getData(), 20).ok(), "a truncated kit is refused");
-
-        // .aupreset round trip
-        const auto text = AuPreset::write (block, "Test");
-        const auto preset = AuPreset::read (text);
-        check (preset.ok(), "an .aupreset reads back", preset.error);
-        check (preset.pluginState == block, "and carries the kit byte for byte");
-        check (preset.name == "Test", "under its name, no extension", preset.name);
-        check (text.contains ("<integer>" + juce::String (AuPreset::subtype) + "</integer>")
-                   && juce::String (AuPreset::subtype) == "1265918584" && juce::String (AuPreset::manufacturer) == "1417310066",
-               "with Kitbox's codes (Ktbx / Tzor)");
-
-        const auto foreign = text.replace (juce::String (AuPreset::subtype), "1685677425");   // Gullfoss's subtype
-        check (! AuPreset::read (foreign).ok(), "another plugin's preset is refused");
-        check (! AuPreset::read ("not a plist").ok(), "a file that is not a preset is refused");
-
-        // One Logic itself wrote, if it is still on this machine.
-        const auto logicFile = juce::File::getSpecialLocation (juce::File::userHomeDirectory)
-                                   .getChildFile ("Downloads/KITBOX 808.kitbox.aupreset");
-        if (logicFile.existsAsFile())
-        {
-            const auto fromLogic = AuPreset::read (logicFile.loadFileAsString());
-            check (fromLogic.ok() && KitFile::read (fromLogic.pluginState.getData(), fromLogic.pluginState.getSize()).ok(),
-                   "a preset Logic saved reads as a kit", fromLogic.error);
-        }
     }
 }
 

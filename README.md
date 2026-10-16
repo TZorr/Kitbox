@@ -26,12 +26,10 @@ VST3 or both - they go into `/Library/Audio/Plug-Ins`. Apple Silicon, macOS
 right-click it and choose Open, or allow it under System Settings › Privacy &
 Security.
 
-**Demo kit:** [`Kits/Transmute Kit.aupreset`](Kits/Transmute%20Kit.aupreset)
+**Demo kit:** [`Kits/Transmute Kit.kitbox`](Kits/Transmute%20Kit.kitbox)
 (also attached to the release) - sixteen DMX drum samples, turned into
 Transmute synths right in Kitbox with **SYN**; each pad's **SMP / SYN** plays
-the original or the synth. Open it with **Load Kit**,
-or put it in `~/Music/Audio Music Apps/Plug-In Settings/Kitbox/` and Logic's
-settings menu lists it.
+the original or the synth. Open it with **Load Kit**.
 
 ## Signal path
 
@@ -123,8 +121,7 @@ for it: Transmute's sliders stay in Transmute.
 
 ## Kits
 
-**Save Kit / Load Kit** write and read Audio Unit presets (`.aupreset`) - the
-same kind of file Logic saves for an AU setting. The dialogs open in
+**Save Kit / Load Kit** write and read Kitbox kits (`.kitbox`). The dialogs open in
 `/Library/Audio/Presets/Kitbox/`. That folder is root's, so it is created once by
 hand:
 
@@ -132,15 +129,12 @@ hand:
     sudo chown "$USER" /Library/Audio/Presets/Kitbox
 
 Until it exists, they open in Logic's settings folder for Kitbox,
-`~/Music/Audio Music Apps/Plug-In Settings/Kitbox/`. The preset is named after the file, without extension, and that
-name is what Logic shows. Inside, under `jucePluginState`, is the Kitbox
-container: every pad's original sample file plus all settings, gzip-compressed.
-The DAW session stores the same container, so a project never depends on where
-the samples were.
-
-Given the extension `.kitbox` instead, Save Kit writes the container itself.
-Since 0.7.0 that is a plain ZIP: rename it to `.zip` (or `unzip` it) to get at
-the samples.
+`~/Music/Audio Music Apps/Plug-In Settings/Kitbox/`. The kit is named after the file, without extension.
+A kit holds every pad's original sample file plus all settings, and the DAW
+session stores the same container, so a project never depends on where the
+samples were. Since 0.7.0 it is a plain ZIP: rename it to `.zip` (or `unzip`
+it) to get at the samples. Since 0.8.0 `.kitbox` is the only kit format; Logic
+keeps its own `.aupreset` settings in its own menu.
 
     kit.xml                        every knob, each pad's Sample/Auto/model choice
     Original/01 Kick 01.wav        each pad's sample, the file as it came
