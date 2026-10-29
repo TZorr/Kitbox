@@ -6,13 +6,16 @@
 //
 //  Click: select the pad and play it, louder the higher up it is hit - the top
 //  edge is full velocity, the bottom edge about a third. Right-click: load,
-//  rename or clear, and what the pad plays - its sample, or Transmute's synth
-//  of it (Auto, or one of the five models). And Export Samples, which writes
-//  every pad's sample and synth into a folder.
+//  rename or clear, its colour, and what the pad plays - its sample, or
+//  Transmute's synth of it (Auto, or one of the five models). And Export
+//  Samples, which writes every pad's sample and synth into a folder.
 //
-//  Top right beside the note, SMP / SYN: what the pad plays, at a click. SYN goes back to
-//  the synth chosen last (Auto unless the menu picked a model); it is filled
-//  once the synth plays, an outline while it fits.
+//  Since 0.9.0 the pad is filled with its colour - its group's, or one chosen
+//  under Colour in its menu - and shows its number, name, waveform and note.
+//  Bottom right, SYN: what the pad plays, at a click. On, it goes back to the
+//  synth chosen last (Auto unless the menu picked a model); it is filled once
+//  the synth plays, an outline while it fits, and faint while the pad plays
+//  its sample.
 //
 //  Drag and drop, all three ways:
 //
@@ -45,10 +48,16 @@ public:
     /** 30 Hz, from the editor: picks up hits from MIDI and fades the flash. */
     void updateFlash();
 
-    /** The SMP / SYN switch, and whether it is shown and can be clicked. */
+    /** Room left around the pad for the selected pad's outer ring. */
+    static constexpr int ringMargin = 3;
+
+    /** The SYN switch, and whether it is shown and can be clicked. */
     juce::Rectangle<float> toggleBounds() const;
     bool toggleVisible() const;
     bool toggleEnabled() const;
+
+    /** What the switch does: sample to the synth chosen last, or back. */
+    void toggleSource();
 
     static bool parseDragDescription (const juce::var& description, int& pad);
     static juce::String dragDescription (int pad);
@@ -73,8 +82,9 @@ private:
     void setDropHover (bool hover);
     void showMenu();
     void showRename();
+    void showColourPicker();
+    juce::Colour fillColour() const;
     void exportSamples();
-    void toggleSource();
     int sourceState() const;
 
     KitboxProcessor& processor;

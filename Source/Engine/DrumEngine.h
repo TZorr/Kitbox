@@ -89,6 +89,9 @@ public:
 
     int getActiveVoiceCount() const noexcept;
 
+    /** The voices sounding after the last render - for the panel, from any thread. */
+    int getSoundingVoices() const noexcept { return soundingVoices.load (std::memory_order_relaxed); }
+
     /** For tests: a fixed seed makes humanize repeatable. */
     void seedRandom (uint32_t seed) { random.seed (seed); }
 
@@ -103,6 +106,7 @@ private:
     std::array<std::atomic<SampleData*>, KitParams::numPads> padSamples;
     std::array<std::atomic<int>, KitParams::numPads> hitCount;
     std::array<std::atomic<float>, KitParams::numPads> lastVelocity;
+    std::atomic<int> soundingVoices { 0 };
 
     std::array<PadParams, KitParams::numPads> padParams {};
     GlobalParams globalParams {};

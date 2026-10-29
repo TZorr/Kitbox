@@ -71,6 +71,7 @@ struct GlobalParams
         std::atomic<float>* a     = nullptr;
         std::atomic<float>* b     = nullptr;
         std::atomic<float>* level = nullptr;
+        std::atomic<float>* on    = nullptr;   // > 0.5 on; null counts as on
     };
 
     std::array<FxSlot, KitParams::Fx::numSlots> fx {};

@@ -36,6 +36,8 @@
 #include "PluginEditor.h"
 #include "UI/Palette.h"
 #include "PluginProcessor.h"
+#include "UI/Controls.h"
+#include "UI/Knob.h"
 #include "UI/PadButton.h"
 
 #include <cstdio>
@@ -253,6 +255,41 @@ namespace
                    && (int) fromDisk.parameters.getRawParameterValue (KitParams::Fx::ids[KitParams::Fx::delay].type)->load() == 2,
                "the kit's knobs and effect types load");
         check (fromDisk.getProgramName (0) == "EditorShot Kit", "and its name", fromDisk.getProgramName (0));
+        check (fromDisk.getKitFile() == kitFile, "Load Kit remembers the file", fromDisk.getKitFile().getFullPathName());
+
+        {
+            // The file reaches a session, so the kit browser steps from the right folder again.
+            juce::MemoryBlock session;
+            fromDisk.getStateInformation (session);
+            KitboxProcessor reopened;
+            reopened.setStateInformation (session.getData(), (int) session.getSize());
+            check (reopened.getKitFile() == kitFile, "and a session brings the file back", reopened.getKitFile().getFullPathName());
+        }
+
+        {
+            // The kit browser's arrows: within the kit's folder, round at its ends.
+            const auto presets = temp.getChildFile ("EditorShot Presets");
+            presets.deleteRecursively();
+            const auto kit = [&presets] (const char* path)
+            {
+                const auto file = presets.getChildFile (path);
+                file.getParentDirectory().createDirectory();
+                file.replaceWithText ("x");
+                return file;
+            };
+
+            const auto a1 = kit ("A/Kit 1.kitbox"), a2 = kit ("A/Kit 2.kitbox"), a10 = kit ("A/Kit 10.kitbox");
+            const auto b1 = kit ("B/Kit 1.kitbox");
+
+            check (KitboxEditor::neighbourKit (a1, presets, 1) == a2, "> goes to the next kit in the folder");
+            check (KitboxEditor::neighbourKit (a2, presets, 1) == a10, "in the Finder's order (2 before 10)");
+            check (KitboxEditor::neighbourKit (a10, presets, 1) == a1, "and round from the folder's end to its start");
+            check (KitboxEditor::neighbourKit (a1, presets, -1) == a10, "< goes round the other way");
+            check (KitboxEditor::neighbourKit (b1, presets, 1) == b1, "a folder with one kit stays on it");
+            check (KitboxEditor::neighbourKit ({}, presets, 1) == a1, "without a kit, the first kit of the first folder");
+            check (KitboxEditor::neighbourKit ({}, presets.getChildFile ("A"), -1) == a10, "or the last one, going back");
+            presets.deleteRecursively();
+        }
 
         // The file is what a session stores: its bytes, straight into
         // setStateInformation, restore kit and name.
@@ -761,18 +798,63 @@ int main (int argc, char** argv)
 
         pump (60);
 
+        {
+            // The knobs and drop-downs, at their 74-point height: each on the
+            // panel, above the footer, and none on another.
+            std::vector<juce::Component*> controls;
+            std::function<void (juce::Component&)> collect = [&] (juce::Component& c)
+            {
+                for (auto* child : c.getChildren())
+                {
+                    if (dynamic_cast<Knob*> (child) != nullptr || dynamic_cast<ChoiceBox*> (child) != nullptr)
+                        controls.push_back (child);
+                    collect (*child);
+                }
+            };
+            collect (*editor);
+
+            const auto footerTop = KitboxEditor::panelHeight - 36;
+            int outside = 0, overlapping = 0;
+            for (size_t i = 0; i < controls.size(); ++i)
+            {
+                const auto bounds = controls[i]->getBoundsInParent();
+                outside += bounds.getY() < 0 || bounds.getBottom() > footerTop || bounds.getRight() > KitboxEditor::panelWidth;
+                for (size_t j = i + 1; j < controls.size(); ++j)
+                    overlapping += bounds.intersects (controls[j]->getBoundsInParent());
+            }
+
+            check (controls.size() > 30, "the panel has its knobs and drop-downs", juce::String ((int) controls.size()));
+            check (outside == 0, "every control sits on the panel, above the footer", juce::String (outside));
+            check (overlapping == 0, "and none lies on another", juce::String (overlapping));
+
+            // The host moves a knob, as automation would: the names stay.
+            setParam (processor, KitParams::padId (1, KitParams::Pad::level), 0.3f);
+            setParam (processor, KitParams::Fx::ids[KitParams::Fx::reverb].a, 0.6f);
+            pump (60);
+
+            int showingValue = 0;
+            for (auto* c : controls)
+                if (auto* knob = dynamic_cast<Knob*> (c))
+                    showingValue += knob->isShowingValue();
+
+            check (showingValue == 0, "a change from the host leaves every knob showing its name", juce::String (showingValue));
+        }
+
+        // At the panel's own 1800 x 870, whatever size this Mac's user left the window at.
+        const auto shotScale = (float) KitboxEditor::panelWidth / (float) editor->getWidth();
+
         // Whatever theme this Mac's user picked, the reference shot is light;
         // the dark one beside it. Palette::setDark, not the button, so the
         // user's setting is left alone.
         Palette::setDark (false);
         editor->repaint();
-        const auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f);
+        const auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, shotScale);
         const auto file = outputDirectory.getChildFile ("kitbox.png");
         check (writePng (image, file), "the panel renders to " + file.getFullPathName());
 
         Palette::setDark (true);
         editor->repaint();
-        check (writePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f),
+        check (writePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, shotScale),
                          outputDirectory.getChildFile ("kitbox-dark.png")), "the panel renders dark");
         Palette::setDark (false);
         editor->repaint();
@@ -785,19 +867,19 @@ int main (int argc, char** argv)
         // SYN under way, and done.
         processor.transmuteAll();
         pump (400);
-        check (writePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f),
+        check (writePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, shotScale),
                          outputDirectory.getChildFile ("kitbox-fitting.png")), "the panel renders mid-SYN");
         waitForFits (processor);
         pump (100);
-        check (writePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f),
+        check (writePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, shotScale),
                          outputDirectory.getChildFile ("kitbox-synth.png")), "and after it");
 
         // The pad's SMP / SYN switch: flips what the pad plays, and plays nothing.
         {
             std::vector<PadButton*> padButtons;
-            for (auto* child : editor->getChildren())
-                if (auto* button = dynamic_cast<PadButton*> (child))
-                    padButtons.push_back (button);
+            if (auto* kitboxEditor = dynamic_cast<KitboxEditor*> (editor.get()))
+                for (int p = 0; p < KitParams::numPads; ++p)
+                    padButtons.push_back (&kitboxEditor->getPad (p));
 
             const auto click = [] (PadButton& button)
             {
@@ -836,7 +918,7 @@ int main (int argc, char** argv)
                 click (button);
                 check (processor.getPadSource (pad) == PadSource::snare, "and SMP -> SYN brings that model back");
                 pump (400);
-                check (writePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f),
+                check (writePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, shotScale),
                                  outputDirectory.getChildFile ("kitbox-toggle.png")), "the panel renders with a pad fitting again");
                 waitForFits (processor);
 

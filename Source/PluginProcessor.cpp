@@ -158,6 +158,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout KitboxProcessor::makeParamet
             group->addChild (makeFloat (ids.level, title + " Level", skewed (-60.0f, 6.0f, 0.1f, -12.0f), 0.0f, dbText));
         }
 
+        // Version hint 3: added in 0.9.0, after every other parameter here.
+        for (int slot = 0; slot < KitParams::Fx::numSlots; ++slot)
+            group->addChild (std::make_unique<juce::AudioParameterBool> (
+                juce::ParameterID { KitParams::Fx::onIds[slot], 3 }, juce::String (KitParams::Fx::titles[slot]) + " On", true));
+
         layout.add (std::move (group));
     }
 
@@ -235,7 +240,8 @@ KitboxProcessor::KitboxProcessor()
     {
         const auto& ids = KitParams::Fx::ids[slot];
         global.fx[slot] = { parameters.getRawParameterValue (ids.type), parameters.getRawParameterValue (ids.a),
-                            parameters.getRawParameterValue (ids.b),    parameters.getRawParameterValue (ids.level) };
+                            parameters.getRawParameterValue (ids.b),    parameters.getRawParameterValue (ids.level),
+                            parameters.getRawParameterValue (KitParams::Fx::onIds[slot]) };
     }
 
     engine.setParameters (pads, global);
@@ -363,6 +369,8 @@ void KitboxProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
 
         if (message.isNoteOn())
         {
+            midiNotes.fetch_add (1, std::memory_order_relaxed);
+
             // Learn takes the note for the pad that asked, and the note still
             // plays - hearing the key you pressed is the confirmation.
             if (const auto learning = learnPad.exchange (-1); learning >= 0)
@@ -374,6 +382,17 @@ void KitboxProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
 
     if (rendered < numSamples)
         engine.render (advance (rendered), numSamples - rendered);
+
+    // The meter beside Master: Main's peak, held until the panel takes it.
+    for (int channel = 0; channel < 2; ++channel)
+    {
+        const auto peak = juce::FloatVectorOperations::findMinAndMax (
+            channel == 0 ? outputs.left[0] : outputs.right[0], numSamples);
+        const auto magnitude = juce::jmax (-peak.getStart(), peak.getEnd());
+        auto& held = meterPeaks[(size_t) channel];
+        auto current = held.load (std::memory_order_relaxed);
+        while (magnitude > current && ! held.compare_exchange_weak (current, magnitude)) {}
+    }
 }
 
 juce::AudioProcessorEditor* KitboxProcessor::createEditor()
@@ -494,6 +513,7 @@ juce::Result KitboxProcessor::saveKit (const juce::File& file)
 {
     // Named before writing, so the saved state carries its own name and a
     // session that restores it shows the same name again.
+    setKitFile (file);
     setKitName (file.getFileNameWithoutExtension());
 
     const auto state = KitFile::write (parameters.copyState(), padOriginals, synthsForSaving());
@@ -521,8 +541,20 @@ juce::Result KitboxProcessor::loadKit (const juce::File& file)
         return juce::Result::fail (kit.error);
 
     const auto result = applyKit (kit);
+    setKitFile (file);
     setKitName (file.getFileNameWithoutExtension());
     return result;
+}
+
+juce::File KitboxProcessor::getKitFile() const
+{
+    const auto path = parameters.state.getProperty (KitParams::propKitFile).toString();
+    return juce::File::isAbsolutePath (path) ? juce::File (path) : juce::File();
+}
+
+void KitboxProcessor::setKitFile (const juce::File& file)
+{
+    parameters.state.setProperty (KitParams::propKitFile, file.getFullPathName(), nullptr);
 }
 
 juce::String KitboxProcessor::getKitName() const
@@ -608,6 +640,30 @@ void KitboxProcessor::renamePad (int pad, const juce::String& newName)
         synth->rename (newName);
 
     // Not a parameter, so the host would not know the session changed.
+    updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
+    sendChangeMessage();
+}
+
+std::optional<juce::Colour> KitboxProcessor::getPadColour (int pad) const
+{
+    const auto stored = parameters.state.getProperty (KitParams::padColourProperty (pad)).toString();
+
+    if (stored.isEmpty())
+        return std::nullopt;
+
+    return juce::Colour::fromString (stored);
+}
+
+void KitboxProcessor::setPadColour (int pad, std::optional<juce::Colour> colour)
+{
+    if (pad < 0 || pad >= KitParams::numPads || getPadColour (pad) == colour)
+        return;
+
+    if (colour)
+        parameters.state.setProperty (KitParams::padColourProperty (pad), colour->withAlpha (1.0f).toString(), nullptr);
+    else
+        parameters.state.removeProperty (KitParams::padColourProperty (pad), nullptr);
+
     updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
     sendChangeMessage();
 }
@@ -815,6 +871,18 @@ void KitboxProcessor::swapPads (int a, int b)
     std::swap (synthErrors[ia], synthErrors[ib]);
     std::swap (synBatch[ia], synBatch[ib]);
     std::swap (padErrors[ia], padErrors[ib]);
+
+    // The colour is the sound's too: a kick dragged elsewhere stays red.
+    {
+        const auto ca = getPadColour (a), cb = getPadColour (b);
+        for (const auto& [pad, colour] : { std::pair { a, cb }, std::pair { b, ca } })
+        {
+            if (colour)
+                parameters.state.setProperty (KitParams::padColourProperty (pad), colour->toString(), nullptr);
+            else
+                parameters.state.removeProperty (KitParams::padColourProperty (pad), nullptr);
+        }
+    }
 
     for (const auto pad : { a, b })
     {

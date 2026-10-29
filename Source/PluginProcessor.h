@@ -75,7 +75,12 @@ public:
     /** Renames the pad's sample; an empty pad or an empty name is ignored. */
     void renamePad (int pad, const juce::String& newName);
 
-    /** Exchanges two pads: samples and every per-pad knob. */
+    /** The colour chosen from the pad's menu; none means its group's. Saved
+        with the kit and the session, and moved along by a swap. */
+    std::optional<juce::Colour> getPadColour (int pad) const;
+    void setPadColour (int pad, std::optional<juce::Colour> colour);
+
+    /** Exchanges two pads: samples, colour and every per-pad knob. */
     void swapPads (int a, int b);
 
     /** What the pad plays: its sample, or its synth when the pad is set to one. */
@@ -107,6 +112,12 @@ public:
 
     juce::String getKitName() const;
     void setKitName (const juce::String& name);
+
+    /** The .kitbox last loaded or saved; none for a kit never saved. Kept in
+        the session, so the kit browser steps from the right folder after a
+        project is reopened. */
+    juce::File getKitFile() const;
+    void setKitFile (const juce::File& file);
 
     /** The file a drag out of a pad hands over: the pad's original file,
         written to a temporary folder under its own name. */
@@ -167,6 +178,12 @@ public:
     juce::AudioProcessorValueTreeState parameters;
 
     const DrumEngine& getEngine() const noexcept { return engine; }
+
+    /** Main's peak per channel since the last call, linear - for the meter. */
+    float takeMeterPeak (int channel) noexcept { return meterPeaks[(size_t) channel].exchange (0.0f); }
+
+    /** Counts note-ons received, from any thread - for the MIDI light. */
+    int getMidiNoteCount() const noexcept { return midiNotes.load (std::memory_order_relaxed); }
 
     /** Releases retired samples now rather than on the timer. For tests. */
     void collectSamples (double graceMs) { pool.collect (graceMs); }
@@ -239,6 +256,8 @@ private:
     std::array<juce::String, KitParams::numPads> padErrors;
 
     std::array<std::atomic<float>, KitParams::numPads> pendingHits;
+    std::array<std::atomic<float>, 2> meterPeaks {};
+    std::atomic<int> midiNotes { 0 };
     std::atomic<int> learnPad { -1 };
     std::atomic<int> learnedAssignment { -1 };   // (pad << 8) | note
 

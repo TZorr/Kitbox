@@ -8,6 +8,11 @@
 #  disk does not by itself make either let go of the old one - and testing a
 #  binary from before the fix looks exactly like the fix not working.
 #
+#  Since 0.9.1 the plugins go to /Library, for every user of this Mac, not to
+#  ~/Library: that folder belongs to root, so the copy runs through sudo and
+#  asks for an admin password. A copy left in ~/Library from before is
+#  removed - two units of the same ID and the host picks either.
+#
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -17,8 +22,10 @@ AU_SOURCE="$ARTEFACTS/AU/Kitbox.component"
 VST3_SOURCE="$ARTEFACTS/VST3/Kitbox.vst3"
 APP_SOURCE="$ARTEFACTS/Standalone/Kitbox.app"
 
-AU_DEST="$HOME/Library/Audio/Plug-Ins/Components"
-VST3_DEST="$HOME/Library/Audio/Plug-Ins/VST3"
+AU_DEST="/Library/Audio/Plug-Ins/Components"
+VST3_DEST="/Library/Audio/Plug-Ins/VST3"
+OLD_AU_DEST="$HOME/Library/Audio/Plug-Ins/Components"
+OLD_VST3_DEST="$HOME/Library/Audio/Plug-Ins/VST3"
 APP_DEST="/Applications"
 
 if [[ ! -d "$VST3_SOURCE" || ! -d "$AU_SOURCE" ]]; then
@@ -50,11 +57,17 @@ if pgrep -xq "Logic Pro"; then
     exit 1
 fi
 
-mkdir -p "$AU_DEST" "$VST3_DEST"
-rm -rf "$AU_DEST/Kitbox.component" "$VST3_DEST/Kitbox.vst3"
-cp -R "$AU_SOURCE"   "$AU_DEST/"
-cp -R "$VST3_SOURCE" "$VST3_DEST/"
+echo "Installing to /Library needs an admin password:"
+sudo mkdir -p "$AU_DEST" "$VST3_DEST"
+sudo rm -rf "$AU_DEST/Kitbox.component" "$VST3_DEST/Kitbox.vst3"
+sudo cp -R "$AU_SOURCE"   "$AU_DEST/"
+sudo cp -R "$VST3_SOURCE" "$VST3_DEST/"
 echo "Installed AU and VST3 to $AU_DEST and $VST3_DEST"
+
+if [[ -e "$OLD_AU_DEST/Kitbox.component" || -e "$OLD_VST3_DEST/Kitbox.vst3" ]]; then
+    rm -rf "$OLD_AU_DEST/Kitbox.component" "$OLD_VST3_DEST/Kitbox.vst3"
+    echo "Removed the old copies from ~/Library/Audio/Plug-Ins"
+fi
 
 if [[ -d "$APP_SOURCE" ]]; then
     rm -rf "$APP_DEST/Kitbox.app"
@@ -62,6 +75,8 @@ if [[ -d "$APP_SOURCE" ]]; then
     echo "Installed the standalone app to $APP_DEST"
 fi
 
+rm -f "$HOME/Library/Caches/AudioUnitCache/com.apple.audiounits.cache" \
+      "$HOME/Library/Preferences/com.apple.audio.InfoHelper.plist"
 killall -9 AudioComponentRegistrar 2>/dev/null || true
 sleep 1
 

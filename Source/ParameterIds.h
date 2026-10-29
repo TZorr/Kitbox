@@ -101,6 +101,10 @@ namespace KitParams
 
         inline constexpr const char* titles[numSlots] { "Reverb", "Delay", "Mod" };
 
+        /** ON / OFF on each return (0.9.0). Off, nothing enters the effect and
+            its return fades out; a kit from before has every slot on. */
+        inline constexpr const char* onIds[numSlots] { "rev_on", "dly_on", "mod_on" };
+
         /** Where each slot sits in EffectCatalog (Modulation 0, Reverb 1, Delay 2).
             Type indices follow the catalog's order: Plate/Room/Hall,
             Digital/Tape/Ping-Pong, Chorus/Phaser/Flanger/Tremolo/Shifter. */
@@ -175,6 +179,9 @@ namespace KitParams
     inline const juce::Identifier stateTreeType     { "KITBOX" };
     inline const juce::Identifier propSelectedPad   { "selectedPad" };
     inline const juce::Identifier propKitName       { "kitName" };
+    /** The .kitbox last loaded or saved, as a full path: where the kit
+        browser's arrows step from (0.9.0). */
+    inline const juce::Identifier propKitFile       { "kitFile" };
     inline const juce::Identifier propStateVersion  { "stateVersion" };
 
     /** Which Humanize scale a saved tree uses. Missing: before 0.6.0, when 100 % was what 50 %
@@ -183,4 +190,9 @@ namespace KitParams
         version hint and must not move. */
     inline const juce::Identifier propHumanizeRange { "humanizeRange" };
     constexpr int humanizeRange = 2;
+
+    /** A pad's own colour, chosen from its menu: "padColour3" = "ff3a9da9".
+        Absent, the pad shows its group's colour (Palette::padColour). A state
+        property, not a parameter - it is how the kit looks, not how it sounds. */
+    inline juce::Identifier padColourProperty (int pad) { return juce::Identifier ("padColour" + juce::String (pad + 1)); }
 }

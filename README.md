@@ -10,12 +10,27 @@ Transmute's synth of it.
 
 Family: [Rackbox](https://github.com/TZorr/Rackbox) (four-slot multi-effect), [Rackbox Plus](https://github.com/TZorr/RackboxPlus) (the same rack, eight knobs per effect), [FMBox](https://github.com/TZorr/FMBox) (eight-sound FM drum synth), [Chordbox](https://github.com/TZorr/Chordbox) (16-pad chord generator), [Transmute](https://github.com/TZorr/Transmute) (drum resynthesis).
 
-<img src="screenshot.png" width="700" alt="Kitbox in Logic Pro, with SMP / SYN on every pad">
+<img src="screenshot.png" width="700" alt="Kitbox 0.9: sixteen coloured pads, the sample display and the pad's settings in colour zones, the FX bus underneath">
 
-<img src="screenshot-dark.png" width="700" alt="Kitbox in Logic Pro with the dark panel">
+<img src="screenshot-dark.png" width="700" alt="Kitbox 0.9 with the dark panel">
 
-**Dark** under the wordmark switches the panel to dark; the choice is yours,
-not the kit's - every Kitbox window and project opens the way you left it.
+## Panel
+
+Since 0.9.0 the panel is laid out at 1800 x 870 and scales as a whole: drag
+the window's corner, at a fixed aspect ratio, from 50 to 125 %. It opens at
+75 % the first time and remembers the size.
+
+- **Header:** the kit browser (< > and the kit field), Load, Save, Learn,
+  Humanize and Master with the output meter, and the light / dark switch on
+  the right. Theme and size are yours, not the kit's - every Kitbox window
+  and project opens the way you left it.
+- **Knobs** show their name; the value takes its place while the mouse is
+  over a knob or turns it, and for a second after - as in Logic's own
+  plug-ins. Automation leaves the names standing.
+- **Colour zones:** Sample and Amp, Filter and Filter Env, Mix and Routing
+  share a colour each; the sends and the FX bus wear their effect's colour.
+- **FX bus:** each effect has its own ON / OFF.
+- **Footer:** MIDI light and the voices sounding.
 
 ## Install
 
@@ -28,7 +43,7 @@ Security.
 
 **Demo kit:** [`Kits/Transmute Kit.kitbox`](Kits/Transmute%20Kit.kitbox)
 (also attached to the release) - sixteen DMX drum samples, turned into
-Transmute synths right in Kitbox with **SYN**; each pad's **SMP / SYN** plays
+Transmute synths right in Kitbox with **SYN ALL**; each pad's **SYN** plays
 the original or the synth. Open it with **Load Kit**.
 
 ## Signal path
@@ -80,7 +95,9 @@ saved before then load with their Humanize halved, so they sound as they did.
 ## Pads
 
 - Click to play (higher on the pad = louder), right-click to load, rename or
-  clear, or to choose Sample, Auto or a Transmute model (see below).
+  clear, to choose Sample, Auto or a Transmute model (see below), or to
+  **Colour** the pad: twelve colours, Custom..., or Default (its group's).
+  The colour is saved with the kit and moves with the pad when it is swapped.
 - **Rename...** renames the pad's sample: the name is saved with the kit and
   the session, moves with the pad when it is swapped, and is the file name a
   drag out of the pad hands over (the extension stays).
@@ -105,11 +122,10 @@ for it: Transmute's sliders stay in Transmute.
 - **Right-click a pad** and choose what it plays: **Sample**, **Auto** (the
   model the hit suggests, named once it has been analysed), or one of the five
   models - **Kick / Tom**, **Snare**, **Hi-Hat**, **Modal**, **Clap**.
-- **SMP / SYN**, top right on each pad beside the note, switches it between
-  its sample and its synth with one click (back to the model chosen last, Auto
-  otherwise). It is filled once the synth plays, an outline while it fits.
-- **SYN**, top right in the display, sets every pad that holds a sample to
-  Auto, once. While it works it counts the pads done (`SYN 3/10`).
+- **SYN**, bottom right on each pad (and beside the play button in the
+  display), switches it between its sample and its synth with one click (back
+  to the model chosen last, Auto otherwise). It is lit once the synth plays.
+- **SYN ALL**, beside PADS, sets every pad that holds a sample to Auto, once.
 - A pad plays its sample until its fit is in (one to four seconds, several
   pads at once), then the synth; the display says `fitting... 40 %`, with a
   bar crossing the waveform as far as the fit has got, then `synth Snare`. Back to Sample and again to the same model switch at once.
@@ -122,14 +138,15 @@ for it: Transmute's sliders stay in Transmute.
 ## Kits
 
 **Save Kit / Load Kit** write and read Kitbox kits (`.kitbox`). The dialogs open in
-`/Library/Audio/Presets/Kitbox/`. That folder is root's, so it is created once by
-hand:
-
-    sudo mkdir -p /Library/Audio/Presets/Kitbox
-    sudo chown "$USER" /Library/Audio/Presets/Kitbox
-
-Until it exists, they open in Logic's settings folder for Kitbox,
+`~/Library/Audio/Presets/T'Zorr/Kitbox/`, which Kitbox creates itself. Should that
+fail, they open in Logic's settings folder for Kitbox,
 `~/Music/Audio Music Apps/Plug-In Settings/Kitbox/`. The kit is named after the file, without extension.
+
+The **kit browser** in the header mirrors that folder: the kit field's menu has
+a submenu per folder, the field shows `Folder › Kit`, and **< >** step through
+the kits of the loaded kit's folder, round from its end to its start. The
+session remembers the kit's file, so the arrows go on in the right folder
+after a project is reopened.
 A kit holds every pad's original sample file plus all settings, and the DAW
 session stores the same container, so a project never depends on where the
 samples were. Since 0.7.0 it is a plain ZIP: rename it to `.zip` (or `unzip`
@@ -148,7 +165,7 @@ writes, still load.
 ## Building
 
     Scripts/build.sh     # Release build + KitboxCheck + EditorShot (panel PNG in build/shots)
-    Scripts/install.sh   # installs to ~/Library/Audio/Plug-Ins, runs auval
+    Scripts/install.sh   # installs to /Library/Audio/Plug-Ins (sudo), runs auval
     Scripts/package.sh   # build + checks, then the AU/VST3 installer in build/
 
 JUCE is expected at `~/JUCE`. No AUv3 on purpose - see the note in `CMakeLists.txt`.

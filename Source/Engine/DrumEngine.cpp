@@ -35,7 +35,8 @@ void DrumEngine::prepare (double newSampleRate, int maxBlockSize)
     for (size_t slot = 0; slot < fxBlocks.size(); ++slot)
     {
         fxBlocks[slot].prepare (sampleRate, maxBlock);
-        fxGain[slot] = levelToGain (globalParams.fx[slot].level->load());
+        const auto& fx = globalParams.fx[slot];
+        fxGain[slot] = fx.on == nullptr || fx.on->load() > 0.5f ? levelToGain (fx.level->load()) : 0.0f;
     }
 
     masterGain = levelToGain (globalParams.masterLevel->load());
@@ -203,6 +204,8 @@ void DrumEngine::render (const Outputs& outputs, int numSamples)
 
         numSamples -= chunk;
     }
+
+    soundingVoices.store (getActiveVoiceCount(), std::memory_order_relaxed);
 }
 
 void DrumEngine::renderChunk (const Outputs& outputs, int n)
@@ -258,14 +261,19 @@ void DrumEngine::renderChunk (const Outputs& outputs, int n)
         settings.sync     = slot == KitParams::Fx::delay;   // Kitbox's delay has always followed the tempo
         settings.bpm      = tempo;
 
+        // Off: nothing enters, and the return fades out over this chunk. The
+        // effect still runs, so its tail has died away by the time it is on again.
+        const auto on = p.on == nullptr || p.on->load() > 0.5f;
+        const auto input = on ? centre : 0.0f;
+
         for (int i = 0; i < n; ++i)
-            fxLeft[(size_t) i] = fxRight[(size_t) i] = buses[slot][i] * centre;
+            fxLeft[(size_t) i] = fxRight[(size_t) i] = buses[slot][i] * input;
 
         fxBlocks[(size_t) slot].process (fxLeft.data(), fxRight.data(), n, settings);
 
         // The return level ramps across the chunk, like Master.
         const auto start = fxGain[(size_t) slot];
-        const auto end   = levelToGain (p.level->load());
+        const auto end   = on ? levelToGain (p.level->load()) : 0.0f;
         const auto step  = (end - start) / (float) n;
         auto gain = start;
 
