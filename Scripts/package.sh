@@ -10,8 +10,7 @@
 #  no way to reach an installer that skips them.
 #
 #  Copied from FX Analyzer's, which it matches step for step, on 2026-10-05.
-#  Note that the installer writes to /Library, while Scripts/install.sh writes
-#  to ~/Library - installing both on one machine lists the plugin twice.
+#  The installer writes to /Library, as Scripts/install.sh does since 0.9.1.
 #
 #  **The version is read out of the built bundle, not written here.** It comes
 #  from project() in CMakeLists.txt, through JUCE, into Info.plist. A version
