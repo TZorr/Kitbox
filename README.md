@@ -34,7 +34,7 @@ the window's corner, at a fixed aspect ratio, from 50 to 125 %. It opens at
 
 ## Install
 
-Download `Kitbox.0.8.0.pkg` from
+Download `Kitbox.0.9.1.pkg` from
 [Releases](https://github.com/TZorr/Kitbox/releases) and run it; choose AU,
 VST3 or both - they go into `/Library/Audio/Plug-Ins`. Apple Silicon, macOS
 26.5 or later. The installer is unsigned, so Gatekeeper refuses it at first:
