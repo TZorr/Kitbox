@@ -10,9 +10,9 @@ Transmute's synth of it.
 
 Family: [Rackbox](https://github.com/TZorr/Rackbox) (four-slot multi-effect), [Rackbox Plus](https://github.com/TZorr/RackboxPlus) (the same rack, eight knobs per effect), [FMBox](https://github.com/TZorr/FMBox) (eight-sound FM drum synth), [Chordbox](https://github.com/TZorr/Chordbox) (16-pad chord generator), [Transmute](https://github.com/TZorr/Transmute) (drum resynthesis).
 
-<img src="screenshot.png" width="700" alt="Kitbox 0.9: sixteen coloured pads, the sample display and the pad's settings in colour zones, the FX bus underneath">
+<img src="screenshot.png" width="700" alt="Kitbox 0.10: sixteen coloured pads with Mute and Solo, the sample display, and one control rack with the pad's settings and the FX bus, the knobs ringed in their zone's colour">
 
-<img src="screenshot-dark.png" width="700" alt="Kitbox 0.9 with the dark panel">
+<img src="screenshot-dark.png" width="700" alt="Kitbox 0.10 with the dark panel">
 
 ## Panel
 
