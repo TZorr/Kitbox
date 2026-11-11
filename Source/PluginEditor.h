@@ -2,25 +2,27 @@
 //  PluginEditor.h
 //  Kitbox
 //
-//  The panel, since 0.9.0 the "Kitbox 0.9 - Vorschlag" mockup:
+//  The panel, since 0.10.0 "Variante B - Kompakt, Farbringe":
 //
-//      KITBOX  [<][>][ kit        v]  LOAD SAVE LEARN      (o) Humanize  (o) Master ||  [moon]
-//      PADS  C1 - D#2        SYN ALL    [ display: pad, file, facts | waveform, envelope ]
-//      [ 1][ 2][ 3][ 4]                 PAD SETTINGS  (o PAD 01 . Kick)  ----------
-//      [ 5][ 6][ 7][ 8]                 SAMPLE        | FILTER       | FILTER ENV
-//      [ 9][10][11][12]                 AMP     | MIX                | ROUTING
-//      [13][14][15][16]
-//      FX BUS  ---------------------------------------------------------------
-//      REVERB  ON            | DELAY  ON             | MOD  ON
-//      KITBOX 0.9.0 | hints                                      MIDI  Voices 3 / 64
+//      KITBOX  [<][>][ kit  FOLDER  v] LOAD SAVE LEARN   (o) Humanize (o) Master ||  [moon][settings]
+//      PADS  C1 - D#2  SYN ALL   . Kick . Snare . Hat . Perc   [ display: pad, file, facts | waveform ]
+//      [ 1][ 2][ 3][ 4]                                        +------------------------------------+
+//      [ 5][ 6][ 7][ 8]                                        |S| SAMPLE      |F| FILTER   |F| ENV |
+//      [ 9][10][11][12]                                        |A| AMP  |M| MIX         |R| ROUTE   |
+//      [13][14][15][16]                                        |R| REVERB  |D| DELAY    |M| MOD    |
+//                                                              +------------------------------------+
+//      KITBOX 0.10.0 | hints                                                  MIDI  Voices 3 / 64
 //
-//  The cards under PAD SETTINGS belong to the selected pad and are rebound
-//  when another pad is selected; the pill beside the title says which. The FX
-//  bus is the three shared send effects: on/off, Type, the effect's two knobs
-//  (named by the effect loaded) and the return level.
+//  The rack is one panel: three rows split by hairlines, each row's sections
+//  by uprights, every section named down its left edge, and the colour of
+//  what it works on in its knobs' rings. The first two rows belong to the
+//  selected pad and are rebound when another pad is selected. The third is
+//  the FX bus, the three shared send effects, a step darker: each with its
+//  ON / OFF as the upright name, Type, the effect's two knobs (named by the
+//  effect loaded) and the return level.
 //
-//  The panel is laid out once at the mockup's 1800 x 870 and scaled as a
-//  whole: the window resizes freely at that aspect ratio, opens at 75 % the
+//  The panel is laid out once at the mockup's 1640 x 588 and scaled as a
+//  whole: the window resizes freely at that aspect ratio, opens at 85 % the
 //  first time, and remembers the size per user. The pads sit far from the
 //  bottom edge, where Logic swallows clicks in roughly the last 20 points.
 //
@@ -45,9 +47,9 @@ public:
     ~KitboxEditor() override;
 
     /** The panel's own size; the window shows it scaled. */
-    static constexpr int panelWidth  = 1800;
-    static constexpr int panelHeight = 870;
-    static constexpr double defaultScale = 0.75, minScale = 0.5, maxScale = 1.25;
+    static constexpr int panelWidth  = 1640;
+    static constexpr int panelHeight = 588;
+    static constexpr double defaultScale = 0.85, minScale = 0.6, maxScale = 1.4;
 
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -70,7 +72,7 @@ protected:
                                                juce::StringArray& files, bool& canMoveFiles) override;
 
 private:
-    /** The 1800 x 870 panel: everything on it is its child, and it is drawn
+    /** The 1640 x 588 panel: everything on it is its child, and it is drawn
         through the editor's paintPanel. */
     struct Panel : public juce::Component
     {
@@ -79,16 +81,15 @@ private:
         KitboxEditor& owner;
     };
 
-    /** A card: its title, what it says on the right, its controls. */
+    /** A section of the rack: its upright title, its controls, one column each. */
     struct Section
     {
-        juce::String title, meta;
-        int columns;
-        float flex;
+        juce::String title;
         std::vector<juce::Component*> controls;
         juce::Rectangle<int> bounds;
         bool fx = false;
         Palette::ZoneId zone = Palette::ZoneId::none;
+        RackPower* power = nullptr;   // an effect's ON / OFF, which is its title too
     };
 
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
@@ -97,6 +98,8 @@ private:
     void paintPanel (juce::Graphics&);
     void layoutPanel();
     void layoutRow (std::vector<Section*> row, juce::Rectangle<int> area);
+    void refreshDimming();
+    void showSettingsMenu();
 
     void bindPadKnobs();
 
@@ -126,15 +129,15 @@ private:
     ChoiceBox filterType { "Type" };
     Knob cutoff { "Cutoff" }, resonance { "Reso" }, drive { "Drive" };
     Knob envAttack { "Attack" }, envDecay { "Decay" }, envAmount { "Amount", true };
-    Knob level { "Level" }, pan { "Pan", true }, sendReverb { "Reverb" }, sendDelay { "Delay" }, sendPhaser { "Mod" };
-    ChoiceBox note { "Note" }, choke { "Choke" }, output { "Output" };
+    Knob level { "Level" }, pan { "Pan", true }, sendReverb { "Rev" }, sendDelay { "Dly" }, sendPhaser { "Mod" };
+    ChoiceBox note { "Note" }, choke { "Choke" }, output { "Out" };
 
     // Global
     struct FxControls
     {
         ChoiceBox type { "Type" };
         Knob a { "A" }, b { "B" }, level { "Level" };
-        Pill power { "ON", true };
+        std::unique_ptr<RackPower> power;
         int shownType = -1;
     };
 
@@ -151,6 +154,8 @@ private:
     PanelButton saveButton { "Save", "M8 2.5v7.5M4.8 7 8 10.2 11.2 7M3 13.5h10" };
     PanelButton learnButton { "Learn", "M13.5 8a5.5 5.5 0 1 1-11 0a5.5 5.5 0 1 1 11 0", "M9.8 8a1.8 1.8 0 1 1-3.6 0a1.8 1.8 0 1 1 3.6 0" };
     PanelButton themeButton { {} };
+    PanelButton settingsButton { {}, "M2.5 5h6.5M12 5h1.5M2.5 11h1.5M7 11h6.5"
+                                     "M12 5a1.5 1.5 0 1 1-3 0a1.5 1.5 0 1 1 3 0M7 11a1.5 1.5 0 1 1-3 0a1.5 1.5 0 1 1 3 0" };
     Pill synAll { "SYN ALL", false };
     bool shownDark = false;
 
@@ -159,8 +164,10 @@ private:
     int shownMidiCount = 0, shownVoices = -1;
     double midiLitUntil = 0.0;
 
-    juce::Rectangle<int> headerArea, wordmarkArea, metersArea, padsTitleArea, padWellArea,
-                         settingsTitleArea, fxTitleArea, rackArea, footerArea;
+    juce::Rectangle<int> headerArea, wordmarkArea, metersArea, padsTitleArea, legendArea, padWellArea,
+                         rackArea, footerArea;
+    std::array<juce::Rectangle<int>, 3> rackRows;
+    std::vector<std::vector<Section*>> rackLayout;
     std::array<juce::Rectangle<int>, 2> headerDividers;
 
     std::vector<std::unique_ptr<PadButton>> pads;

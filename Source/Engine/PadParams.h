@@ -43,6 +43,8 @@ struct PadParams
     std::atomic<float>* note       = nullptr;   // MIDI note 0..127
     std::atomic<float>* choke      = nullptr;   // 0 = none, 1..8
     std::atomic<float>* output     = nullptr;   // 0 = Main, 1..16 = Out n
+    std::atomic<float>* mute       = nullptr;   // > 0.5 muted
+    std::atomic<float>* solo       = nullptr;   // > 0.5 soloed
 
     /** The same order as KitParams::Pad::all. */
     std::atomic<float>** slot (int index) noexcept
@@ -50,7 +52,7 @@ struct PadParams
         std::atomic<float>** slots[] = {
             &level, &pan, &tune, &fine, &start, &velocity, &attack, &hold, &decay,
             &filterType, &cutoff, &resonance, &drive, &envAttack, &envDecay, &envAmount,
-            &sendReverb, &sendDelay, &sendPhaser, &note, &choke, &output
+            &sendReverb, &sendDelay, &sendPhaser, &note, &choke, &output, &mute, &solo
         };
         return slots[index];
     }

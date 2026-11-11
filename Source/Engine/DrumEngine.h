@@ -19,6 +19,11 @@
 //  all the chokes happen before any of the new voices start, so layered pads in
 //  the same group do not silence each other.
 //
+//  Mute and Solo: a muted pad, or while any pad is soloed every pad that is
+//  not, still counts its hits (the panel flashes) but starts no voice, and
+//  what it has sounding fades over the choke time - so a mute pressed under a
+//  long ride silences it at once, without a click.
+//
 //  Outputs: a pad routed to an aux output the host has not enabled plays on
 //  Main instead. A stereo instance of a multi-output plugin must not lose a
 //  drum because of a setting made in a multi-output one. The effect returns
@@ -99,6 +104,10 @@ private:
     void renderChunk (const Outputs& outputs, int numSamples);
     DrumVoice* findVoice();
     int chokeGroupOf (int pad) const noexcept;
+
+    /** Mute, or another pad's Solo: the pad starts nothing and fades what rings. */
+    bool anySolo() const noexcept;
+    bool isSilenced (int pad, bool soloActive) const noexcept;
     void choke (int group) noexcept;
     void startVoice (int pad, float velocity);
 

@@ -112,6 +112,23 @@ int DrumEngine::chokeGroupOf (int pad) const noexcept
     return juce::jlimit (0, KitParams::numChokeGroups, (int) std::lround (padParams[(size_t) pad].choke->load()));
 }
 
+bool DrumEngine::anySolo() const noexcept
+{
+    for (const auto& p : padParams)
+        if (p.solo != nullptr && p.solo->load() > 0.5f)
+            return true;
+
+    return false;
+}
+
+bool DrumEngine::isSilenced (int pad, bool soloActive) const noexcept
+{
+    const auto& p = padParams[(size_t) pad];
+    const auto muted  = p.mute != nullptr && p.mute->load() > 0.5f;
+    const auto soloed = p.solo != nullptr && p.solo->load() > 0.5f;
+    return muted || (soloActive && ! soloed);
+}
+
 void DrumEngine::choke (int group) noexcept
 {
     if (group <= 0)
@@ -129,7 +146,7 @@ void DrumEngine::startVoice (int pad, float velocity)
 
     auto* sample = padSamples[(size_t) pad].load (std::memory_order_acquire);
 
-    if (sample == nullptr)
+    if (sample == nullptr || isSilenced (pad, anySolo()))
         return;
 
     const auto amount = globalParams.humanize->load() / 100.0f;
@@ -223,10 +240,15 @@ void DrumEngine::renderChunk (const Outputs& outputs, int n)
     std::fill (busDelay.begin(),  busDelay.begin()  + n, 0.0f);
     std::fill (busPhaser.begin(), busPhaser.begin() + n, 0.0f);
 
+    const auto soloActive = anySolo();
+
     for (auto& v : voices)
     {
         if (! v.isActive())
             continue;
+
+        if (! v.isFading() && isSilenced (v.getPad(), soloActive))
+            v.fadeOut (chokeFadeMs);
 
         // Read live, so re-routing a ringing pad moves its tail too.
         auto out = (size_t) juce::jlimit (0, KitParams::numAuxOutputs,

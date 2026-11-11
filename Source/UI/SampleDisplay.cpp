@@ -10,7 +10,7 @@
 
 namespace
 {
-    constexpr float padding = 16.0f, infoWidth = 232.0f, gap = 16.0f, scaleHeight = 20.0f;
+    constexpr float padding = 16.0f, infoWidth = 196.0f, gap = 14.0f, scaleHeight = 20.0f;
 
     float param (const KitboxProcessor& processor, int pad, const char* suffix)
     {

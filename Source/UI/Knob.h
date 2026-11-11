@@ -2,17 +2,19 @@
 //  Knob.h
 //  Kitbox
 //
-//  A flat rotary knob with its name and its value printed with it.
+//  A rotary knob with its name and its value printed with it.
 //
-//  Two layouts: stacked - the name over a 52-point knob, as in the pad editor
-//  and the FX bus - and beside, a 38-point knob with name and value to its
-//  right, as Humanize and Master in the header.
+//  Since 0.10.0 (Variante B) a light metal cap sits inside a coloured ring:
+//  the ring's track and value in the knob's zone colour, a dot where the
+//  value starts from, a dark pointer on the cap.
 //
-//  A stacked knob shows its value in place of its name, as Logic's own
-//  plug-ins do: while the mouse is over it or turns it, and for a second
-//  after. That saves the value's row under every knob. A change the host
-//  makes - automation - leaves the name standing, so a playing automation
-//  lane does not set every label flickering.
+//  Two layouts: stacked - the value over a 42-point knob and the name under
+//  it, as in the control rack - and beside, a 38-point knob with name and
+//  value to its right, as Humanize and Master in the header.
+//
+//  A stacked knob lights its value while the mouse is over it or turns it,
+//  and for a second after. A change the host makes - automation - leaves it
+//  dim, so a playing automation lane does not set every value flickering.
 //
 //  Bipolar knobs - pan, tune, fine, filter envelope amount - draw their arc
 //  from twelve o'clock, so "nothing" looks like nothing. Double-click returns a
@@ -51,20 +53,20 @@ public:
     void mouseExit (const juce::MouseEvent&) override;
     void mouseUp (const juce::MouseEvent&) override;
 
-    /** Whether a stacked knob shows its value where its name goes. */
+    /** Whether a stacked knob lights its value. */
     bool isShowingValue() const { return isMouseOverOrDragging() || isTimerRunning(); }
 
-    /** Height of a stacked knob: name or value, 6, dial. */
-    static constexpr int stackedHeight = 74;
+    /** Height of a stacked knob: value 14, 1, dial 42, 1, name 14. */
+    static constexpr int stackedHeight = 72;
 
     /** How long the value stays after the mouse has left or let go. */
     static constexpr int valueHoldMs = 1000;
 
-    /** Draws a dial of the mockup's geometry - 52 units, ring radius 21 -
-        scaled into `area`. Shared with nothing else yet, but kept apart so the
-        two layouts cannot drift. */
+    /** Draws a dial of the mockup's geometry - 52 units, ring radius 22 -
+        scaled into `area`. `big` is the header's: a heavier cap without the
+        highlight and without the origin dot. */
     static void drawDial (juce::Graphics&, juce::Rectangle<float> area, float proportion, bool bipolar,
-                          bool hover, juce::Colour value, juce::Colour track, float strokeScale = 1.0f);
+                          bool hover, juce::Colour value, juce::Colour track, bool big = false);
 
 private:
     void timerCallback() override;

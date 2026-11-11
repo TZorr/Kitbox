@@ -4,6 +4,10 @@
 //
 //  Every colour on the panel, and the fonts.
 //
+//  Since 0.10.0 the panel follows "Variante B - Kompakt, Farbringe": the 0.9
+//  colours, one control rack in place of the cards, and light metal knobs
+//  whose ring carries the zone's colour.
+//
 //  Since 0.9.0 the panel follows the "Kitbox 0.9 - Vorschlag" mockup: a
 //  near-black body, cards a step lighter with a hairline edge, one orange
 //  accent, and pads filled with their colour - coral kicks, teal snares,
@@ -72,6 +76,32 @@ namespace Palette
     inline juce::Colour padEmpty    { 0xff18181b };
     inline juce::Colour padEmptyLine{ 0xff3a3a42 };
     inline juce::Colour padRing     { 0xfff7f5f2 };   // inside the selected pad's orange ring
+    inline juce::Colour padEmptyBar { 0xff202024 };   // an empty pad's title bar
+    inline juce::Colour padEmptyBarLine { 0xff2c2c32 };
+
+    // The control rack (0.10.0): one panel, rows and sections split by hairlines.
+    inline juce::Colour rackPanel   { 0xff1a1a1d };
+    inline juce::Colour rackEdge    { 0xff26262b };
+    inline juce::Colour rackFxRow   { 0xff141417 };   // the FX bus's row, a step darker
+    inline juce::Colour rackDivider { 0xff2a2a30 };
+    inline juce::Colour powerFace   { 0xff1c1c20 };   // an effect's vertical ON / OFF
+    inline juce::Colour powerLine   { 0xff2c2c32 };
+    inline juce::Colour powerOffDot { 0xff3a3a40 };
+    inline juce::Colour powerOffInk { 0xff7a7a82 };
+
+    inline juce::Colour knobName    { 0xffc4c4ca };   // the name under a knob
+    inline juce::Colour choiceFace  { 0xff111114 };   // the rack's drop-downs
+    inline juce::Colour choiceLine  { 0xff303036 };
+    inline juce::Colour choiceInk   { 0xffe4e2de };
+    inline juce::Colour choiceArrow { 0xffc4c4ca };
+
+    // The metal knob: the same on both panels - it is a thing, not a surface.
+    inline const juce::Colour capRim       { 0xff7e7e85 };
+    inline const juce::Colour cap          { 0xffc6c6cb };
+    inline const juce::Colour capHighlight { 0xffd4d4d8 };
+    inline const juce::Colour capPointer   { 0xff18181b };
+    inline const juce::Colour bigCapRim    { 0xff86868c };   // Humanize, Master
+    inline const juce::Colour bigCap       { 0xffc9c9ce };
 
     inline bool dark = true;
 
@@ -134,6 +164,23 @@ namespace Palette
         set (padEmpty,     0xff18181b, 0xffefeeeb);
         set (padEmptyLine, 0xff3a3a42, 0xffb9b5ae);
         set (padRing,      0xfff7f5f2, 0xffffffff);
+        set (padEmptyBar,  0xff202024, 0xffe4e2de);
+        set (padEmptyBarLine, 0xff2c2c32, 0xffd3d0ca);
+
+        set (rackPanel,    0xff1a1a1d, 0xfff7f6f4);
+        set (rackEdge,     0xff26262b, 0xffd6d3cd);
+        set (rackFxRow,    0xff141417, 0xffefede9);
+        set (rackDivider,  0xff2a2a30, 0xffdcd9d3);
+        set (powerFace,    0xff1c1c20, 0xffffffff);
+        set (powerLine,    0xff2c2c32, 0xffd0cdc7);
+        set (powerOffDot,  0xff3a3a40, 0xffc9c5be);
+        set (powerOffInk,  0xff7a7a82, 0xff9a968f);
+
+        set (knobName,     0xffc4c4ca, 0xff4a4744);
+        set (choiceFace,   0xff111114, 0xffffffff);
+        set (choiceLine,   0xff303036, 0xffcfccc6);
+        set (choiceInk,    0xffe4e2de, 0xff1f1e1c);
+        set (choiceArrow,  0xffc4c4ca, 0xff6e6b65);
     }
 
     //==============================================================================
@@ -144,11 +191,11 @@ namespace Palette
     //  one colour per send effect - the same on its card in the FX rack and on
     //  its send knob in Mix, so a send and its return read as a pair.
     //
-    //  A zone is one colour, desaturated to 70 %, and what is mixed from it:
-    //  the card's faint tint (7 % into the card, 1.5 % for the grey zones),
-    //  its edge (24 %), its title (a third towards white - towards black on
-    //  the light panel) and, for send knobs, their track. Computed while
-    //  painting, so a theme switch needs no more than a repaint.
+    //  A zone is one colour, desaturated to 80 % (Variante B), and what is
+    //  mixed from it: the ring's track (30 % into the bare track), its title
+    //  (30 % towards white - a third towards black on the light panel) and,
+    //  for the drop-downs, an edge. Mix and Routing are greys of their own.
+    //  Computed while painting, so a theme switch needs no more than a repaint.
 
     enum class ZoneId { none, source, filter, mix, routing, reverb, delay, mod, neutral };
 
@@ -166,7 +213,7 @@ namespace Palette
             case ZoneId::reverb:  return juce::Colour (0xff8b7cf6);
             case ZoneId::delay:   return juce::Colour (0xff3fc4a8);
             case ZoneId::mod:     return juce::Colour (0xffe06ab0);
-            case ZoneId::routing: return juce::Colour (0xff8a8f98);
+            case ZoneId::routing: return dark ? juce::Colour (0xff8a8f98) : juce::Colour (0xff7f848d);
             case ZoneId::mix:
             case ZoneId::neutral: return dark ? juce::Colour (0xffc4c4cc) : juce::Colour (0xff7d7a74);
             case ZoneId::none:    break;
@@ -182,23 +229,31 @@ namespace Palette
     inline Zone zone (ZoneId id, bool inRack = false)
     {
         if (id == ZoneId::none)
-            return { accent, card, line, heading, knobTrack };
+            return { accent, rackPanel, line, heading, knobTrack };
 
         const auto raw = zoneBase (id);
+        const auto base = inRack ? rackFxRow : rackPanel;
+        const auto bareTrack = dark ? juce::Colour (0xff28282d) : knobTrack;
+
+        // The greys keep their own track and title (Variante B).
+        if (id == ZoneId::mix || id == ZoneId::neutral || id == ZoneId::routing)
+        {
+            const auto mix = id != ZoneId::routing;
+            const auto track = dark ? juce::Colour (mix ? 0xff36363c : 0xff303036) : knobTrack.darker (mix ? 0.06f : 0.03f);
+            const auto label = dark ? juce::Colour (mix ? 0xffc4c4ca : 0xffa3a3aa) : raw.darker (0.5f);
+            return { raw, base, base.interpolatedWith (raw, 0.3f), label, track };
+        }
+
         const auto grey = 0.3f * raw.getFloatRed() + 0.59f * raw.getFloatGreen() + 0.11f * raw.getFloatBlue();
-        const auto desaturate = [grey] (float v) { return grey + (v - grey) * 0.7f; };
+        const auto desaturate = [grey] (float v) { return grey + (v - grey) * 0.8f; };
         const auto colour = juce::Colour::fromFloatRGBA (desaturate (raw.getFloatRed()), desaturate (raw.getFloatGreen()),
                                                          desaturate (raw.getFloatBlue()), 1.0f);
 
-        const auto base = inRack ? fxCard : card;
-        const auto amount = id == ZoneId::mix || id == ZoneId::routing || id == ZoneId::neutral ? 0.015f
-                          : dark ? 0.07f : 0.09f;
-
         return { colour,
-                 base.interpolatedWith (colour, amount),
-                 base.interpolatedWith (colour, dark ? 0.24f : 0.32f),
-                 colour.interpolatedWith (dark ? juce::Colours::white : juce::Colours::black, 0.35f),
-                 knobTrack.interpolatedWith (colour, 0.32f) };
+                 base,
+                 base.interpolatedWith (colour, dark ? 0.3f : 0.4f),
+                 colour.interpolatedWith (dark ? juce::Colours::white : juce::Colours::black, dark ? 0.3f : 0.35f),
+                 bareTrack.interpolatedWith (colour, 0.3f) };
     }
 
     //==============================================================================

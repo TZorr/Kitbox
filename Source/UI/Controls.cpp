@@ -81,32 +81,42 @@ void ChoiceBox::set (int value)
 
 juce::Rectangle<float> ChoiceBox::boxBounds() const
 {
-    // Under the name's 16-point row and 6, in the 52-point row a knob's dial
-    // takes: at most 116 wide, 32 high.
-    const auto row = getLocalBounds().toFloat().withTrimmedTop (16.0f + 6.0f).removeFromTop (52.0f);
-    return row.withSizeKeepingCentre (juce::jmin (row.getWidth(), 116.0f), 32.0f);
+    // Where a knob's dial goes - under the 14-point value row and 1, in the
+    // 42-point row - at most 92 wide, 26 high (Variante B).
+    const auto row = getLocalBounds().toFloat().withTrimmedTop (14.0f + 1.0f).removeFromTop (42.0f);
+    return row.withSizeKeepingCentre (juce::jmin (row.getWidth() - 4.0f, 92.0f), 26.0f);
 }
 
 void ChoiceBox::paint (juce::Graphics& g)
 {
     const auto box = boxBounds();
 
-    g.setColour (isMouseOver() ? Palette::field.brighter (0.05f) : Palette::field);
-    g.fillRoundedRectangle (box, 7.0f);
-    g.setColour (zone == Palette::ZoneId::none ? Palette::fieldLine : Palette::zone (zone, rack).border);
-    g.drawRoundedRectangle (box.reduced (0.5f), 7.0f, 1.0f);
+    g.setColour (isMouseOver() ? Palette::choiceFace.brighter (0.08f) : Palette::choiceFace);
+    g.fillRoundedRectangle (box, 4.0f);
+    g.setColour (isMouseOver() && zone != Palette::ZoneId::none ? Palette::zone (zone, rack).border : Palette::choiceLine);
+    g.drawRoundedRectangle (box.reduced (0.5f), 4.0f, 1.0f);
 
-    auto inner = box.reduced (10.0f, 0.0f);
-    drawChevron (g, inner.removeFromRight (10.0f).getCentre(), 5.0f, Palette::inkDim);
-    inner.removeFromRight (6.0f);
+    // The text, and a small filled triangle at the right.
+    auto inner = box.reduced (8.0f, 0.0f);
+    {
+        const auto arrow = inner.removeFromRight (8.0f).withSizeKeepingCentre (8.0f, 8.0f);
+        juce::Path triangle;
+        triangle.addTriangle (arrow.getX() + 1.0f, arrow.getY() + 2.5f, arrow.getRight() - 1.0f, arrow.getY() + 2.5f,
+                              arrow.getCentreX(), arrow.getY() + 6.0f);
+        g.setColour (Palette::choiceArrow);
+        g.fillPath (triangle);
+    }
+    inner.removeFromRight (4.0f);
 
-    g.setColour (Palette::title);
-    g.setFont (Palette::font (12.0f));
-    g.drawFittedText (textFor (current), inner.toNearestInt(), juce::Justification::centredLeft, 1, 0.85f);
+    g.setColour (Palette::choiceInk);
+    g.setFont (Palette::font (11.0f, true, 0.02f));
+    g.drawFittedText (textFor (current).toUpperCase(), inner.toNearestInt(), juce::Justification::centredLeft, 1, 0.8f);
 
-    g.setColour (Palette::inkDim);
-    g.setFont (Palette::label (12.0f));
-    g.drawFittedText (label, getLocalBounds().removeFromTop (16), juce::Justification::centred, 1, 0.8f);
+    // The name under it, where a knob has its own.
+    g.setColour (Palette::knobName);
+    g.setFont (Palette::label (11.0f));
+    g.drawFittedText (label, getLocalBounds().withTrimmedTop (14 + 1 + 42 + 1).removeFromTop (14),
+                      juce::Justification::centred, 1, 0.8f);
 }
 
 void ChoiceBox::mouseDown (const juce::MouseEvent& event)
@@ -146,8 +156,7 @@ void ChoiceBox::mouseDown (const juce::MouseEvent& event)
 
     // Opened from the box, not the whole control: the name under it would
     // push the list a name's height away from the box.
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this)
-                                                  .withTargetScreenArea (localAreaToGlobal (boxBounds().toNearestInt()))
+    menu.showMenuAsync (panelMenu (*this).withTargetScreenArea (localAreaToGlobal (boxBounds().toNearestInt()))
                                                   .withMinimumWidth ((int) boxBounds().getWidth()),
                         [safe = juce::Component::SafePointer<ChoiceBox> (this), first] (int result)
     {
@@ -200,9 +209,29 @@ void PanelButton::paintButton (juce::Graphics& g, bool highlighted, bool down)
         drawChevron (g, inner.removeFromRight (12.0f).getCentre(), 6.0f, Palette::inkDim);
         inner.removeFromRight (8.0f);
 
+        // The name, then the tag framed after it (Variante B's "FACTORY").
+        const auto nameFont = Palette::font (14.0f, true);
+        const auto tagFont = Palette::font (10.0f, true, 0.1f);
+        const auto tagText = tag.toUpperCase();
+        const auto tagWidth = tag.isEmpty() ? 0.0f : juce::GlyphArrangement::getStringWidth (tagFont, tagText) + 12.0f;
+        const auto nameWidth = juce::jmin (juce::GlyphArrangement::getStringWidth (nameFont, getButtonText()) + 2.0f,
+                                           inner.getWidth() - (tagWidth > 0.0f ? tagWidth + 10.0f : 0.0f));
+
         g.setColour (Palette::title);
-        g.setFont (Palette::font (14.0f, true));
-        g.drawFittedText (getButtonText(), inner.toNearestInt(), juce::Justification::centredLeft, 1, 0.9f);
+        g.setFont (nameFont);
+        g.drawFittedText (getButtonText(), inner.removeFromLeft (nameWidth).toNearestInt(), juce::Justification::centredLeft, 1, 0.9f);
+
+        if (tagWidth > 0.0f)
+        {
+            inner.removeFromLeft (10.0f);
+            const auto column = inner.removeFromLeft (juce::jmin (tagWidth, inner.getWidth()));
+            const auto frame = column.withSizeKeepingCentre (column.getWidth(), 18.0f);
+            g.setColour (Palette::padEmptyLine.withMultipliedAlpha (0.9f));
+            g.drawRoundedRectangle (frame.reduced (0.5f), 4.0f, 1.0f);
+            g.setColour (Palette::inkDim);
+            g.setFont (tagFont);
+            g.drawFittedText (tagText, frame.toNearestInt(), juce::Justification::centred, 1, 0.8f);
+        }
         return;
     }
 
@@ -265,4 +294,44 @@ void Pill::paintButton (juce::Graphics& g, bool highlighted, bool down)
     g.setColour (on ? Palette::buttonText : Palette::inkFaint);
     g.setFont (Palette::font (10.0f, true, 0.04f));
     g.drawText (text, inner, juce::Justification::centredLeft);
+}
+
+//==============================================================================
+RackPower::RackPower (const juce::String& titleText)
+    : juce::Button (titleText), title (titleText.toUpperCase())
+{
+    setClickingTogglesState (true);
+}
+
+void RackPower::attach (juce::AudioProcessorValueTreeState& state, const juce::String& parameterId)
+{
+    attachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (state, parameterId, *this);
+}
+
+void RackPower::paintButton (juce::Graphics& g, bool highlighted, bool down)
+{
+    const auto bounds = getLocalBounds().toFloat().reduced (0.5f);
+    const auto on = getToggleState();
+    const auto colours = Palette::zone (zone, true);
+
+    g.setColour (highlighted || down ? Palette::powerFace.brighter (0.07f) : Palette::powerFace);
+    g.fillRoundedRectangle (bounds, 4.0f);
+    g.setColour (Palette::powerLine);
+    g.drawRoundedRectangle (bounds, 4.0f, 1.0f);
+
+    // The dot over the title, the title read bottom to top; centred as a pair.
+    const auto font = Palette::font (11.0f, true, 0.14f);
+    const auto length = juce::GlyphArrangement::getStringWidth (font, title);
+    const auto total = 6.0f + 6.0f + length;
+    const auto top = bounds.getCentreY() - total * 0.5f;
+
+    g.setColour (on ? colours.line : Palette::powerOffDot);
+    g.fillEllipse (bounds.getCentreX() - 3.0f, top, 6.0f, 6.0f);
+
+    const auto textCentre = juce::Point<float> (bounds.getCentreX(), top + 12.0f + length * 0.5f);
+    juce::Graphics::ScopedSaveState state (g);
+    g.addTransform (juce::AffineTransform::rotation (-juce::MathConstants<float>::halfPi, textCentre.x, textCentre.y));
+    g.setColour (on ? colours.label : Palette::powerOffInk);
+    g.setFont (font);
+    g.drawText (title, juce::Rectangle<float> (length + 4.0f, 14.0f).withCentre (textCentre), juce::Justification::centred, false);
 }

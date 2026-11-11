@@ -87,6 +87,7 @@ namespace
                 p.note->store ((float) (KitParams::firstNote + (int) index));
                 p.choke->store (0.0f);
                 p.output->store (0.0f);
+                p.mute->store (0.0f);   p.solo->store (0.0f);
                 p.level->store (0.0f);  p.pan->store (0.0f);   p.tune->store (0.0f);  p.fine->store (0.0f);
                 p.start->store (0.0f);  p.velocity->store (100.0f);
                 p.attack->store (0.0f); p.hold->store (0.0f);  p.decay->store (KitParams::decayMaxMs);
@@ -547,6 +548,26 @@ namespace
         knobs.padParams[1].note->store (60.0f);
         engine.handleNoteOn (60, 1.0f);
         check (engine.getActiveVoiceCount() == 2 && hits (1) == 1, "two pads on one note play together");
+        knobs.defaults();
+
+        // Mute and Solo
+        engine.reset();
+        knobs.padParams[0].mute->store (1.0f);
+        const auto hitsBefore = hits (0);
+        engine.trigger (0, 1.0f);
+        check (hits (0) == hitsBefore + 1 && engine.getActiveVoiceCount() == 0, "a muted pad counts the hit and starts no voice");
+        knobs.padParams[0].mute->store (0.0f);
+        knobs.padParams[1].solo->store (1.0f);
+        engine.trigger (0, 1.0f);
+        engine.trigger (1, 1.0f);
+        check (engine.getActiveVoiceCount() == 1, "while a pad is soloed only it plays");
+        knobs.padParams[1].solo->store (0.0f);
+        engine.trigger (0, 1.0f);
+        knobs.padParams[0].mute->store (1.0f);
+        engine.render (l.data(), r.data(), 48);
+        check (engine.getActiveVoiceCount() == 2, "a mute fades what rings rather than cutting it");
+        engine.render (l.data(), r.data(), 480);
+        check (engine.getActiveVoiceCount() == 1, "and it is gone 5 ms later");
         knobs.defaults();
 
         // Choke

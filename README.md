@@ -16,20 +16,33 @@ Family: [Rackbox](https://github.com/TZorr/Rackbox) (four-slot multi-effect), [R
 
 ## Panel
 
-Since 0.9.0 the panel is laid out at 1800 x 870 and scales as a whole: drag
-the window's corner, at a fixed aspect ratio, from 50 to 125 %. It opens at
-75 % the first time and remembers the size.
+Since 0.10.0 the panel follows the compact design "Variante B": laid out at
+1640 x 588, it scales as a whole - drag the window's corner, at a fixed
+aspect ratio, from 60 to 140 %, or pick a size under the settings button. It
+opens at 85 % the first time and remembers the size.
 
-- **Header:** the kit browser (< > and the kit field), Load, Save, Learn,
-  Humanize and Master with the output meter, and the light / dark switch on
-  the right. Theme and size are yours, not the kit's - every Kitbox window
-  and project opens the way you left it.
-- **Knobs** show their name; the value takes its place while the mouse is
-  over a knob or turns it, and for a second after - as in Logic's own
-  plug-ins. Automation leaves the names standing.
-- **Colour zones:** Sample and Amp, Filter and Filter Env, Mix and Routing
-  share a colour each; the sends and the FX bus wear their effect's colour.
-- **FX bus:** each effect has its own ON / OFF.
+- **Header:** the kit browser (< > and the kit field, the kit's folder framed
+  after its name), Load, Save, Learn, Humanize and Master with the output
+  meter, and on the right the light / dark switch and the settings menu
+  (window size, presets folder). Theme and size are yours, not the kit's -
+  every Kitbox window and project opens the way you left it.
+- **Pads:** number and name in a lighter bar, SYN at its end; **M** and
+  **S** (Mute, Solo) bottom right. A muted pad - or, while any pad is
+  soloed, every pad that is not - plays nothing and is drawn at half
+  strength; what it still had ringing fades out in 5 ms. Mute and Solo are
+  saved with the kit and can be automated.
+- **Control rack:** one panel under the sample display, three rows - Sample,
+  Filter, Filter Env; Amp, Mix, Routing; and the FX bus - each section named
+  down its left edge.
+- **Knobs** are light metal caps in a coloured ring: the value above, the
+  name below. The value lights up while the mouse is over a knob or turns
+  it, and for a second after; automation leaves it dim.
+- **Colour zones:** the rings say what a knob works on - amber for the sound
+  (Sample, Amp), blue for the filter, grey for Mix and Routing, and each
+  send in its effect's colour, as on the FX bus. With the filter Off its
+  knobs fade back.
+- **FX bus:** each effect's upright name is its ON / OFF; off, its controls
+  fade.
 - **Footer:** MIDI light and the voices sounding.
 
 ## Install

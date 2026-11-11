@@ -4,6 +4,7 @@
 //
 
 #include "PadButton.h"
+#include "Controls.h"
 #include "Palette.h"
 #include "PluginProcessor.h"
 #include "TextUtf8.h"
@@ -18,8 +19,29 @@ namespace
     /** Menu ids of Colour's swatches, in Palette::padChoices' order, and its other two items. */
     constexpr int colourItem = 200, customColourItem = 230, defaultColourItem = 231;
 
-    /** The SYN switch, bottom right. */
-    constexpr float toggleWidth = 34.0f, toggleHeight = 19.0f;
+    /** Variante B's pad: a 25-point title bar, a 22-point note row; SYN
+        34 x 17 at the bar's right end, M and S 18 x 16 bottom right. */
+    constexpr float barHeight = 25.0f, noteHeight = 22.0f;
+    constexpr float toggleWidth = 34.0f, toggleHeight = 17.0f;
+    constexpr float switchWidth = 18.0f, switchHeight = 16.0f;
+
+    /** A small switch on a pad: dark and in the pad's colour when on. */
+    void drawPadSwitch (juce::Graphics& g, juce::Rectangle<float> r, const juce::String& text, bool on,
+                        juce::Colour padColour, juce::Colour ink, float fontSize, float alpha = 1.0f)
+    {
+        const auto dark = juce::Colour (0xff0e0e10).withAlpha (0.85f);
+        const auto back = on ? dark : juce::Colours::black.withAlpha (0.12f);
+        const auto edge = on ? dark : juce::Colours::black.withAlpha (0.28f);
+        const auto type = on ? padColour : ink.withAlpha (0.72f);
+
+        g.setColour (back.withMultipliedAlpha (alpha));
+        g.fillRoundedRectangle (r, 2.0f);
+        g.setColour (edge.withMultipliedAlpha (alpha));
+        g.drawRoundedRectangle (r.reduced (0.5f), 2.0f, 1.0f);
+        g.setColour (type.withMultipliedAlpha (alpha));
+        g.setFont (Palette::font (fontSize, true, 0.06f));
+        g.drawText (text, r, juce::Justification::centred);
+    }
 
     /** A swatch for the Colour menu. */
     std::unique_ptr<juce::Drawable> swatch (juce::Colour colour)
@@ -102,9 +124,57 @@ void PadButton::setDropHover (bool hover)
 
 juce::Rectangle<float> PadButton::toggleBounds() const
 {
-    // Bottom right, 9 in from the side and 8 up, on the note's line.
+    // Top right, 5 in from the side and 4 down, in the title bar.
     const auto pad = getLocalBounds().toFloat().reduced ((float) ringMargin);
-    return { pad.getRight() - 9.0f - toggleWidth, pad.getBottom() - 8.0f - toggleHeight, toggleWidth, toggleHeight };
+    return { pad.getRight() - 5.0f - toggleWidth, pad.getY() + 4.0f, toggleWidth, toggleHeight };
+}
+
+juce::Rectangle<float> PadButton::soloBounds() const
+{
+    const auto pad = getLocalBounds().toFloat().reduced ((float) ringMargin);
+    return { pad.getRight() - 5.0f - switchWidth, pad.getBottom() - 4.0f - switchHeight, switchWidth, switchHeight };
+}
+
+juce::Rectangle<float> PadButton::muteBounds() const
+{
+    return soloBounds().translated (-(switchWidth + 3.0f), 0.0f);
+}
+
+bool PadButton::isMuted() const
+{
+    return processor.parameters.getRawParameterValue (KitParams::padId (index, KitParams::Pad::mute))->load() > 0.5f;
+}
+
+bool PadButton::isSoloed() const
+{
+    return processor.parameters.getRawParameterValue (KitParams::padId (index, KitParams::Pad::solo))->load() > 0.5f;
+}
+
+bool PadButton::isSilenced() const
+{
+    if (isMuted())
+        return true;
+
+    if (isSoloed())
+        return false;
+
+    for (int p = 0; p < KitParams::numPads; ++p)
+        if (processor.parameters.getRawParameterValue (KitParams::padId (p, KitParams::Pad::solo))->load() > 0.5f)
+            return true;
+
+    return false;
+}
+
+void PadButton::flip (const char* suffix)
+{
+    if (auto* parameter = processor.parameters.getParameter (KitParams::padId (index, suffix)))
+    {
+        parameter->beginChangeGesture();
+        parameter->setValueNotifyingHost (parameter->getValue() > 0.5f ? 0.0f : 1.0f);
+        parameter->endChangeGesture();
+    }
+
+    repaint();
 }
 
 juce::Colour PadButton::fillColour() const
@@ -159,11 +229,15 @@ void PadButton::updateFlash()
 
     const auto state = sourceState();
 
-    if (note != shownNote || choke != shownChoke || state != shownSourceState)
+    // Mute and Solo, this pad's and whether it is silenced by another's.
+    const auto mix = (isMuted() ? 1 : 0) | (isSoloed() ? 2 : 0) | (isSilenced() ? 4 : 0);
+
+    if (note != shownNote || choke != shownChoke || state != shownSourceState || mix != shownMix)
     {
         shownNote = note;
         shownChoke = choke;
         shownSourceState = state;
+        shownMix = mix;
         repaint();
     }
 
@@ -193,28 +267,192 @@ void PadButton::paint (juce::Graphics& g)
     auto colour = fillColour();
     const auto ink = filled ? Palette::padInk (colour) : Palette::inkDim;
 
-    if (filled)
     {
-        // A hit lifts the colour towards white for a moment, as hard as it was played.
-        auto fill = isMouseOver() ? colour.brighter (0.06f) : colour;
-        fill = fill.interpolatedWith (juce::Colours::white, flash * 0.45f);
+        // A silenced pad at half strength; the rings below stay whole.
+        juce::Graphics::ScopedSaveState state (g);
+        if (filled && isSilenced())
+            g.beginTransparencyLayer (0.5f);
 
-        g.setColour (fill);
-        g.fillRoundedRectangle (bounds, radius);
-        g.setColour (juce::Colours::black.withAlpha (0.25f));
-        g.drawRoundedRectangle (bounds.reduced (0.5f), radius, 1.0f);
-    }
-    else
-    {
-        g.setColour (isMouseOver() ? Palette::padEmpty.brighter (0.05f) : Palette::padEmpty);
-        g.fillRoundedRectangle (bounds, radius);
+        juce::Path shape;
+        shape.addRoundedRectangle (bounds, radius);
 
-        juce::Path outline, dashed;
-        outline.addRoundedRectangle (bounds.reduced (0.5f), radius);
-        const float dashes[] { 4.0f, 3.0f };
-        juce::PathStrokeType (1.0f).createDashedStroke (dashed, outline, dashes, 2);
-        g.setColour (flash > 0.0f ? Palette::padEmptyLine.interpolatedWith (colour, flash) : Palette::padEmptyLine);
-        g.fillPath (dashed);
+        if (filled)
+        {
+            // A hit lifts the colour towards white for a moment, as hard as it was played.
+            auto fill = isMouseOver() ? colour.brighter (0.06f) : colour;
+            fill = fill.interpolatedWith (juce::Colours::white, flash * 0.45f);
+
+            g.setColour (fill);
+            g.fillPath (shape);
+
+            // The title bar: the pad's colour 22 % towards white, a hairline under it.
+            {
+                juce::Graphics::ScopedSaveState clip (g);
+                g.reduceClipRegion (shape);
+                const auto bar = bounds.withHeight (barHeight);
+                g.setColour (fill.interpolatedWith (juce::Colours::white, 0.22f));
+                g.fillRect (bar);
+                g.setColour (juce::Colours::black.withAlpha (0.16f));
+                g.fillRect (bar.withTop (bar.getBottom() - 1.0f));
+            }
+
+            g.setColour (juce::Colours::black.withAlpha (0.25f));
+            g.drawRoundedRectangle (bounds.reduced (0.5f), radius, 1.0f);
+        }
+        else
+        {
+            g.setColour (isMouseOver() ? Palette::padEmpty.brighter (0.05f) : Palette::padEmpty);
+            g.fillPath (shape);
+
+            {
+                juce::Graphics::ScopedSaveState clip (g);
+                g.reduceClipRegion (shape);
+                const auto bar = bounds.withHeight (barHeight);
+                g.setColour (Palette::padEmptyBar);
+                g.fillRect (bar);
+                g.setColour (Palette::padEmptyBarLine);
+                g.fillRect (bar.withTop (bar.getBottom() - 1.0f));
+            }
+
+            juce::Path dashed;
+            juce::Path outline;
+            outline.addRoundedRectangle (bounds.reduced (0.5f), radius);
+            const float dashes[] { 4.0f, 3.0f };
+            juce::PathStrokeType (1.0f).createDashedStroke (dashed, outline, dashes, 2);
+            g.setColour (flash > 0.0f ? Palette::padEmptyLine.interpolatedWith (colour, flash) : Palette::padEmptyLine);
+            g.fillPath (dashed);
+        }
+
+        // The bar: the number, then the name, clear of SYN.
+        {
+            auto row = bounds.withHeight (barHeight).withTrimmedLeft (9.0f).withTrimmedRight (48.0f).withTrimmedBottom (1.0f);
+            const auto numberFont = Palette::font (13.0f, true);
+            const auto number = juce::String (index + 1);
+
+            g.setColour (ink.withMultipliedAlpha (0.8f));
+            g.setFont (numberFont);
+            const auto numberWidth = juce::GlyphArrangement::getStringWidth (numberFont, number) + 1.0f;
+            g.drawText (number, row.removeFromLeft (numberWidth), juce::Justification::centredLeft);
+            row.removeFromLeft (8.0f);
+
+            juce::String name;
+            auto nameColour = ink;
+
+            if (loading)
+                name = utf8 ("loading\xe2\x80\xa6");
+            else if (processor.getPadError (index).isNotEmpty())
+            {
+                name = "can't read";
+                nameColour = Palette::warning;
+            }
+            else if (sample != nullptr)
+                name = sample->getName();
+
+            g.setColour (nameColour);
+            g.setFont (Palette::font (12.5f, true));
+            g.drawText (name, row, juce::Justification::centredLeft, true);
+        }
+
+        // Bottom: the note that plays the pad, and its choke group if any.
+        const auto noteRow = bounds.withTop (bounds.getBottom() - noteHeight).withTrimmedLeft (9.0f);
+        {
+            const auto chokeGroup = (int) processor.parameters.getRawParameterValue (KitParams::padId (index, KitParams::Pad::choke))->load();
+            auto noteText = KitParams::noteName (processor.getPadNote (index));
+            if (chokeGroup > 0)
+                noteText += utf8 ("  \xc2\xb7  CH ") + juce::String (chokeGroup);
+
+            g.setColour (ink.withMultipliedAlpha (filled ? 0.75f : 1.0f));
+            g.setFont (Palette::font (11.0f, true));
+            g.drawText (noteText, noteRow.withTrimmedRight (2.0f * switchWidth + 3.0f + 10.0f), juce::Justification::centredLeft, true);
+        }
+
+        // Between them, 38 high: the waveform, or the invitation to drop one.
+        const auto content = bounds.withTrimmedTop (barHeight).withTrimmedBottom (noteHeight).reduced (8.0f, 0.0f);
+        const auto waveArea = content.withSizeKeepingCentre (content.getWidth(), juce::jmin (38.0f, content.getHeight()));
+
+        if (sample != nullptr)
+        {
+            const auto& overview = sample->getOverview();
+            const auto columns = (int) overview.size();
+
+            if (columns > 1)
+            {
+                float peak = 1.0e-6f;
+                for (const auto& [low, high] : overview)
+                    peak = juce::jmax (peak, -low, high);
+
+                // Symmetric about the middle, as the mockup draws a hit: its
+                // loudness, not its polarity, is what a pad needs to show.
+                const auto half = waveArea.getHeight() * 0.5f - 1.0f;
+                const auto mid = waveArea.getCentreY();
+                juce::Path band;
+
+                for (int i = 0; i < columns; ++i)
+                {
+                    const auto& [low, high] = overview[(size_t) i];
+                    const auto x = waveArea.getX() + waveArea.getWidth() * (float) i / (float) (columns - 1);
+                    const auto amp = juce::jmax (0.6f, half * juce::jmax (-low, high) / peak);
+                    if (i == 0) band.startNewSubPath (x, mid - amp); else band.lineTo (x, mid - amp);
+                }
+
+                for (int i = columns - 1; i >= 0; --i)
+                {
+                    const auto& [low, high] = overview[(size_t) i];
+                    const auto x = waveArea.getX() + waveArea.getWidth() * (float) i / (float) (columns - 1);
+                    band.lineTo (x, mid + juce::jmax (0.6f, half * juce::jmax (-low, high) / peak));
+                }
+
+                band.closeSubPath();
+                g.setColour (ink.withAlpha (0.78f));
+                g.fillPath (band);
+            }
+        }
+        else if (! loading && processor.getPadError (index).isEmpty())
+        {
+            const auto font = Palette::font (12.0f);
+            const auto text = juce::String ("Drop sample");
+            const auto width = 14.0f + 6.0f + juce::GlyphArrangement::getStringWidth (font, text);
+            auto line = waveArea.withSizeKeepingCentre (width, 16.0f);
+            const auto plus = line.removeFromLeft (14.0f).withSizeKeepingCentre (9.0f, 9.0f);
+
+            g.setColour (Palette::inkDim);
+            g.drawLine (plus.getCentreX(), plus.getY(), plus.getCentreX(), plus.getBottom(), 1.4f);
+            g.drawLine (plus.getX(), plus.getCentreY(), plus.getRight(), plus.getCentreY(), 1.4f);
+            line.removeFromLeft (6.0f);
+            g.setFont (font);
+            g.drawText (text, line, juce::Justification::centredLeft);
+        }
+
+        // SYN: filled once the synth plays, an outline while it fits, faint while
+        // the pad plays its sample; red type when its fit failed, and the whole
+        // switch faint where the sample is too long to model.
+        if (toggleVisible())
+        {
+            const auto toggle = toggleBounds();
+            const auto synth = processor.getPadSource (index) != PadSource::sample;
+            const auto playing = synth && processor.isPadSynth (index);
+            const auto failed = processor.getSynthError (index).isNotEmpty();
+            const auto alpha = toggleEnabled() ? 1.0f : 0.4f;
+
+            if (synth && ! playing && ! failed)
+            {
+                // Fitting: an outline only.
+                g.setColour (ink.withAlpha (0.85f * alpha));
+                g.drawRoundedRectangle (toggle.reduced (0.5f), 2.0f, 1.0f);
+                g.setFont (Palette::font (10.0f, true, 0.06f));
+                g.drawText ("SYN", toggle, juce::Justification::centred);
+            }
+            else
+            {
+                drawPadSwitch (g, toggle, "SYN", playing || failed, failed ? Palette::warning : colour, ink, 10.0f, alpha);
+            }
+
+            drawPadSwitch (g, muteBounds(), "M", isMuted(), colour, ink, 9.5f);
+            drawPadSwitch (g, soloBounds(), "S", isSoloed(), colour, ink, 9.5f);
+        }
+
+        if (filled && isSilenced())
+            g.endTransparencyLayer();
     }
 
     // Selected: a light ring inside, the accent outside, as in the mockup.
@@ -231,154 +469,27 @@ void PadButton::paint (juce::Graphics& g)
         g.setColour (Palette::accent);
         g.drawRoundedRectangle (bounds.reduced (1.0f), radius, 2.5f);
     }
-
-    auto content = bounds.withTrimmedLeft (10.0f).withTrimmedRight (10.0f).withTrimmedTop (9.0f).withTrimmedBottom (8.0f);
-
-    // Top: the number, then the name.
-    {
-        auto row = content.removeFromTop (19.0f);
-        const auto numberFont = Palette::font (15.0f, true);
-        const auto number = juce::String (index + 1);
-
-        g.setColour (ink);
-        g.setFont (numberFont);
-        const auto numberWidth = juce::GlyphArrangement::getStringWidth (numberFont, number) + 1.0f;
-        g.drawText (number, row.removeFromLeft (numberWidth), juce::Justification::centredLeft);
-        row.removeFromLeft (8.0f);
-
-        juce::String name;
-        auto nameColour = ink;
-
-        if (loading)
-            name = utf8 ("loading\xe2\x80\xa6");
-        else if (processor.getPadError (index).isNotEmpty())
-        {
-            name = "can't read";
-            nameColour = Palette::warning;
-        }
-        else if (sample != nullptr)
-            name = sample->getName();
-
-        g.setColour (nameColour);
-        g.setFont (Palette::font (13.0f, true));
-        g.drawText (name, row, juce::Justification::centredLeft, true);
-    }
-
-    // Bottom: the note that plays the pad, and its choke group if any.
-    const auto noteRow = content.removeFromBottom (18.0f);
-    {
-        const auto chokeGroup = (int) processor.parameters.getRawParameterValue (KitParams::padId (index, KitParams::Pad::choke))->load();
-        auto noteText = KitParams::noteName (processor.getPadNote (index));
-        if (chokeGroup > 0)
-            noteText += utf8 ("  \xc2\xb7  CH ") + juce::String (chokeGroup);
-
-        g.setColour (ink.withAlpha (filled ? 0.85f : 1.0f));
-        g.setFont (Palette::font (12.0f, true));
-        g.drawText (noteText, noteRow.withTrimmedRight (toggleWidth + 4.0f), juce::Justification::centredLeft, true);
-    }
-
-    // Between them, 44 high: the waveform, or the invitation to drop one.
-    const auto waveArea = content.withSizeKeepingCentre (content.getWidth(), juce::jmin (44.0f, content.getHeight()));
-
-    if (sample != nullptr)
-    {
-        const auto& overview = sample->getOverview();
-        const auto columns = (int) overview.size();
-
-        if (columns > 1)
-        {
-            float peak = 1.0e-6f;
-            for (const auto& [low, high] : overview)
-                peak = juce::jmax (peak, -low, high);
-
-            // Symmetric about the middle, as the mockup draws a hit: its
-            // loudness, not its polarity, is what a pad needs to show.
-            const auto half = waveArea.getHeight() * 0.5f - 1.0f;
-            const auto mid = waveArea.getCentreY();
-            juce::Path band;
-
-            for (int i = 0; i < columns; ++i)
-            {
-                const auto& [low, high] = overview[(size_t) i];
-                const auto x = waveArea.getX() + waveArea.getWidth() * (float) i / (float) (columns - 1);
-                const auto amp = juce::jmax (0.6f, half * juce::jmax (-low, high) / peak);
-                if (i == 0) band.startNewSubPath (x, mid - amp); else band.lineTo (x, mid - amp);
-            }
-
-            for (int i = columns - 1; i >= 0; --i)
-            {
-                const auto& [low, high] = overview[(size_t) i];
-                const auto x = waveArea.getX() + waveArea.getWidth() * (float) i / (float) (columns - 1);
-                band.lineTo (x, mid + juce::jmax (0.6f, half * juce::jmax (-low, high) / peak));
-            }
-
-            band.closeSubPath();
-            g.setColour (ink.withAlpha (0.82f));
-            g.fillPath (band);
-        }
-    }
-    else if (! loading && processor.getPadError (index).isEmpty())
-    {
-        const auto font = Palette::font (12.0f);
-        const auto text = juce::String ("Drop sample");
-        const auto width = 14.0f + 6.0f + juce::GlyphArrangement::getStringWidth (font, text);
-        auto line = waveArea.withSizeKeepingCentre (width, 16.0f);
-        const auto plus = line.removeFromLeft (14.0f).withSizeKeepingCentre (9.0f, 9.0f);
-
-        g.setColour (Palette::inkDim);
-        g.drawLine (plus.getCentreX(), plus.getY(), plus.getCentreX(), plus.getBottom(), 1.4f);
-        g.drawLine (plus.getX(), plus.getCentreY(), plus.getRight(), plus.getCentreY(), 1.4f);
-        line.removeFromLeft (6.0f);
-        g.setFont (font);
-        g.drawText (text, line, juce::Justification::centredLeft);
-    }
-
-    // SYN: filled once the synth plays, an outline while it fits, faint while
-    // the pad plays its sample; red type when its fit failed, and the whole
-    // switch faint where the sample is too long to model.
-    if (toggleVisible())
-    {
-        const auto toggle = toggleBounds();
-        const auto synth = processor.getPadSource (index) != PadSource::sample;
-        const auto playing = synth && processor.isPadSynth (index);
-        const auto failed = processor.getSynthError (index).isNotEmpty();
-        const auto alpha = toggleEnabled() ? 1.0f : 0.4f;
-
-        juce::Colour back, edge, type;
-
-        if (playing || failed)
-        {
-            back = juce::Colour (0xff0e0e10).withAlpha (0.85f);
-            edge = back;
-            type = failed ? Palette::warning : colour;
-        }
-        else if (synth)
-        {
-            back = juce::Colours::transparentBlack;
-            edge = ink.withAlpha (0.85f);
-            type = ink.withAlpha (0.85f);
-        }
-        else
-        {
-            back = juce::Colours::black.withAlpha (0.14f);
-            edge = juce::Colours::black.withAlpha (0.28f);
-            type = ink.withAlpha (0.72f);
-        }
-
-        g.setColour (back.withMultipliedAlpha (alpha));
-        g.fillRoundedRectangle (toggle, 2.0f);
-        g.setColour (edge.withMultipliedAlpha (alpha));
-        g.drawRoundedRectangle (toggle.reduced (0.5f), 2.0f, 1.0f);
-        g.setColour (type.withMultipliedAlpha (alpha));
-        g.setFont (Palette::font (10.5f, true, 0.06f));
-        g.drawText ("SYN", toggle, juce::Justification::centred);
-    }
 }
 
 void PadButton::mouseDown (const juce::MouseEvent& event)
 {
     dragStarted = false;
     toggleHit = false;
+
+    // Mute and Solo: flipped, the pad neither selected nor played.
+    if (! event.mods.isPopupMenu() && toggleVisible())
+    {
+        for (const auto& [area, suffix] : { std::pair { muteBounds(), KitParams::Pad::mute },
+                                            std::pair { soloBounds(), KitParams::Pad::solo } })
+        {
+            if (area.contains (event.position))
+            {
+                toggleHit = true;
+                flip (suffix);
+                return;
+            }
+        }
+    }
 
     // The switch: the pad selected, not played.
     if (! event.mods.isPopupMenu() && toggleVisible() && toggleBounds().contains (event.position))
@@ -536,7 +647,7 @@ void PadButton::showMenu()
     menu.addSeparator();
     menu.addItem (4, "Export Samples...", processor.hasAnySample());
 
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
+    menu.showMenuAsync (panelMenu (*this),
                         [safe = juce::Component::SafePointer<PadButton> (this)] (int result)
     {
         if (safe == nullptr)

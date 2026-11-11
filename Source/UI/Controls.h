@@ -10,7 +10,9 @@
 //    would, so it lines up in a row of knobs.
 //  - PanelButton: the header's rounded buttons - an icon, a word, or both -
 //    and the kit field, whose text is the kit's name.
-//  - Pill: the small rounded switch - an effect's ON / OFF, and SYN ALL.
+//  - Pill: the small rounded switch - SYN ALL.
+//  - RackPower: an effect's ON / OFF in the control rack (0.10.0): a narrow
+//    upright button, a dot in the effect's colour over its name.
 //
 
 #pragma once
@@ -18,6 +20,16 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include "Palette.h"
+
+/** How every menu on the panel opens: as a child of the plugin window, not
+    as a window of its own. Logic hosts Audio Units in a process of its own
+    (AUHostingService), and a JUCE menu in a separate desktop window there is
+    drawn but never gets the click - the menu shows and nothing happens. */
+inline juce::PopupMenu::Options panelMenu (juce::Component& target)
+{
+    return juce::PopupMenu::Options().withTargetComponent (&target)
+                                     .withParentComponent (target.getTopLevelComponent());
+}
 
 class ChoiceBox : public juce::Component
 {
@@ -70,6 +82,9 @@ public:
     /** Lit in the accent colour: Learn while it waits for a note. */
     bool active = false;
 
+    /** The kit field's small framed word after the name: the kit's folder. */
+    juce::String tag;
+
     void paintButton (juce::Graphics&, bool highlighted, bool down) override;
 
 private:
@@ -90,5 +105,22 @@ public:
 
 private:
     bool isSwitch;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> attachment;
+};
+
+//==============================================================================
+class RackPower : public juce::Button
+{
+public:
+    explicit RackPower (const juce::String& titleText);
+
+    void attach (juce::AudioProcessorValueTreeState& state, const juce::String& parameterId);
+    void setZone (Palette::ZoneId zoneToUse) { zone = zoneToUse; repaint(); }
+
+    void paintButton (juce::Graphics&, bool highlighted, bool down) override;
+
+private:
+    juce::String title;
+    Palette::ZoneId zone = Palette::ZoneId::none;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> attachment;
 };

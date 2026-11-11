@@ -12,7 +12,11 @@
 //
 //  Since 0.9.0 the pad is filled with its colour - its group's, or one chosen
 //  under Colour in its menu - and shows its number, name, waveform and note.
-//  Bottom right, SYN: what the pad plays, at a click. On, it goes back to the
+//  Since 0.10.0 (Variante B) number and name sit in a lighter bar along the
+//  top, SYN at its right end, and M and S - Mute, Solo - bottom right. A pad
+//  that is muted, or not soloed while another is, is drawn at half strength.
+//
+//  SYN: what the pad plays, at a click. On, it goes back to the
 //  synth chosen last (Auto unless the menu picked a model); it is filled once
 //  the synth plays, an outline while it fits, and faint while the pad plays
 //  its sample.
@@ -53,6 +57,14 @@ public:
 
     /** The SYN switch, and whether it is shown and can be clicked. */
     juce::Rectangle<float> toggleBounds() const;
+
+    /** Mute and Solo, bottom right; shown on a pad holding a sample. */
+    juce::Rectangle<float> muteBounds() const;
+    juce::Rectangle<float> soloBounds() const;
+    bool isMuted() const;
+    bool isSoloed() const;
+    /** Muted, or another pad soloed and this one not. */
+    bool isSilenced() const;
     bool toggleVisible() const;
     bool toggleEnabled() const;
 
@@ -86,12 +98,13 @@ private:
     juce::Colour fillColour() const;
     void exportSamples();
     int sourceState() const;
+    void flip (const char* suffix);
 
     KitboxProcessor& processor;
     const int index;
     bool selected = false, dropHover = false, dragStarted = false, toggleHit = false;
     int lastHitCount = 0;
-    int shownNote = -1, shownChoke = -1, shownSourceState = -1;
+    int shownNote = -1, shownChoke = -1, shownSourceState = -1, shownMix = -1;
     PadSource lastSynthSource = PadSource::automatic;
     float flash = 0.0f;
 

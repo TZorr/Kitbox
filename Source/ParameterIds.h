@@ -4,7 +4,7 @@
 //
 //  Every parameter the host can see, named in one place.
 //
-//  A pad's parameters are the same twenty-two suffixes sixteen times over, with
+//  A pad's parameters are the same twenty-four suffixes sixteen times over, with
 //  the pad number in front: "pad06_cutoff". The ids are the identity a saved
 //  session is restored by, so once a session exists none of these strings may
 //  change - rename the display name instead.
@@ -62,11 +62,17 @@ namespace KitParams
         inline constexpr const char* choke      = "choke";
         inline constexpr const char* output     = "output";
 
+        /** Mute and Solo (0.10.0). A muted pad - or, while any pad is
+            soloed, a pad that is not - starts no voice, and what it still has
+            sounding fades over the choke time. */
+        inline constexpr const char* mute       = "mute";
+        inline constexpr const char* solo       = "solo";
+
         /** Every suffix, in the order PadParams::slot() lists them. */
         inline constexpr const char* all[] = {
             level, pan, tune, fine, start, velocity, attack, hold, decay,
             filterType, cutoff, resonance, drive, envAttack, envDecay, envAmount,
-            sendReverb, sendDelay, sendPhaser, note, choke, output
+            sendReverb, sendDelay, sendPhaser, note, choke, output, mute, solo
         };
     }
 

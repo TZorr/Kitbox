@@ -799,7 +799,7 @@ int main (int argc, char** argv)
         pump (60);
 
         {
-            // The knobs and drop-downs, at their 74-point height: each on the
+            // The knobs and drop-downs, at their 72-point height: each on the
             // panel, above the footer, and none on another.
             std::vector<juce::Component*> controls;
             std::function<void (juce::Component&)> collect = [&] (juce::Component& c)
@@ -840,7 +840,7 @@ int main (int argc, char** argv)
             check (showingValue == 0, "a change from the host leaves every knob showing its name", juce::String (showingValue));
         }
 
-        // At the panel's own 1800 x 870, whatever size this Mac's user left the window at.
+        // At the panel's own 1640 x 588, whatever size this Mac's user left the window at.
         const auto shotScale = (float) KitboxEditor::panelWidth / (float) editor->getWidth();
 
         // Whatever theme this Mac's user picked, the reference shot is light;
@@ -856,6 +856,16 @@ int main (int argc, char** argv)
         editor->repaint();
         check (writePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, shotScale),
                          outputDirectory.getChildFile ("kitbox-dark.png")), "the panel renders dark");
+
+        // Mute and Solo: pad 5 muted, pad 2 soloed - every other pad at half strength.
+        setParam (processor, KitParams::padId (4, KitParams::Pad::mute), 1.0f);
+        setParam (processor, KitParams::padId (1, KitParams::Pad::solo), 1.0f);
+        pump (60);
+        check (writePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, shotScale),
+                         outputDirectory.getChildFile ("kitbox-mute-solo.png")), "the panel renders with Mute and Solo");
+        setParam (processor, KitParams::padId (4, KitParams::Pad::mute), 0.0f);
+        setParam (processor, KitParams::padId (1, KitParams::Pad::solo), 0.0f);
+        pump (60);
         Palette::setDark (false);
         editor->repaint();
 

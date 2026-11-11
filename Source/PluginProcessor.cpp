@@ -200,6 +200,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout KitboxProcessor::makeParamet
         group->addChild (makeChoice (padId (pad, P::choke), prefix + "Choke Group", KitParams::chokeNames(), 0, false));
         group->addChild (makeChoice (padId (pad, P::output), prefix + "Output", KitParams::outputNames(), 0, false));
 
+        // Version hint 4: added in 0.10.0, after every other pad parameter.
+        group->addChild (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { padId (pad, P::mute), 4 }, prefix + "Mute", false));
+        group->addChild (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { padId (pad, P::solo), 4 }, prefix + "Solo", false));
+
         layout.add (std::move (group));
     }
 

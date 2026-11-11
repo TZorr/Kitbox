@@ -25,21 +25,26 @@ namespace
     }
 
     constexpr const char* darkModeKey = "darkMode";
-    constexpr const char* scaleKey    = "windowScale";
+    // A new key for 0.10.0: the panel's proportions changed, so the size
+    // saved for the 0.9 panel would not mean the same window.
+    constexpr const char* scaleKey    = "panelScale";
 
-    // The mockup's measures.
-    constexpr int margin = 24;          // around the body, the FX bus, the header's ends
-    constexpr int headerHeight = 64;
-    constexpr int footerHeight = 36;
+    // Variante B's measures.
+    constexpr int margin = 24;          // around the body, the header's and footer's ends
+    constexpr int headerHeight = 65;    // 64 and its hairline
+    constexpr int footerHeight = 37;
     constexpr int padColumn = 640;
     constexpr int columnGap = 20;
-    constexpr int titleRow = 20;        // PADS, PAD SETTINGS, FX BUS
+    constexpr int titleRow = 20;        // PADS
     constexpr int titleGap = 12;
-    constexpr int padHeight = 118;
+    constexpr int padHeight = 96;
     constexpr int padGap = 6;
-    constexpr int displayHeight = 210;
-    constexpr int cardHeight = 128;
-    constexpr int cardGap = 12;
+    constexpr int displayHeight = 168;
+    constexpr int rackGap = 12;
+    constexpr int sectionTitle = 6 + 26;   // the upright title and the room before it
+
+    /** The pad groups, for the legend over the pads. */
+    const char* const groupNames[] { "Kick", "Snare", "Hat", "Perc" };
 
     const juce::String moonIcon = "M13.2 9.6A5.6 5.6 0 1 1 6.4 2.8a4.5 4.5 0 0 0 6.8 6.8z";
     const juce::String sunIcon  = "M11 8a3 3 0 1 1-6 0a3 3 0 1 1 6 0M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6"
@@ -58,27 +63,35 @@ namespace
     }
 }
 
+static juce::File presetFolder();
+
 //==============================================================================
 KitboxEditor::KitboxEditor (KitboxProcessor& p)
     : AudioProcessorEditor (&p), kitbox (p), display (p), settings (openSettings())
 {
     addAndMakeVisible (panel);
 
-    sectionSample  = { "Sample",     {},  4, 4.0f, { &tune, &fine, &start, &velocity }, {} };
-    sectionFilter  = { "Filter",     {},  4, 4.0f, { &filterType, &cutoff, &resonance, &drive }, {} };
-    sectionEnv     = { "Filter Env", {},  3, 3.0f, { &envAttack, &envDecay, &envAmount }, {} };
-    sectionAmp     = { "Amp",        {},  3, 3.0f, { &attack, &hold, &decay }, {} };
-    sectionMix     = { "Mix", utf8 ("Sends \xe2\x86\x92 FX bus"), 5, 5.0f, { &level, &pan, &sendReverb, &sendDelay, &sendPhaser }, {} };
-    sectionRouting = { "Routing",    {},  3, 3.4f, { &note, &choke, &output }, {} };
+    sectionSample  = { "Sample", { &tune, &fine, &start, &velocity }, {} };
+    sectionFilter  = { "Filter", { &filterType, &cutoff, &resonance, &drive }, {} };
+    sectionEnv     = { "F-Env",  { &envAttack, &envDecay, &envAmount }, {} };
+    sectionAmp     = { "Amp",    { &attack, &hold, &decay }, {} };
+    sectionMix     = { "Mix",    { &level, &pan, &sendReverb, &sendDelay, &sendPhaser }, {} };
+    sectionRouting = { "Route",  { &note, &choke, &output }, {} };
     Section* fxSections[] { &sectionReverb, &sectionDelay, &sectionMod };
 
     for (int slot = 0; slot < KitParams::Fx::numSlots; ++slot)
     {
         auto& k = fx[(size_t) slot];
-        *fxSections[slot] = { KitParams::Fx::titles[slot], {}, 4, 1.0f, { &k.type, &k.a, &k.b, &k.level }, {} };
+        k.power = std::make_unique<RackPower> (KitParams::Fx::titles[slot]);
+        *fxSections[slot] = { KitParams::Fx::titles[slot], { &k.type, &k.a, &k.b, &k.level }, {} };
         fxSections[slot]->fx = true;
-        panel.addAndMakeVisible (k.power);
+        fxSections[slot]->power = k.power.get();
+        panel.addAndMakeVisible (*k.power);
     }
+
+    rackLayout = { { &sectionSample, &sectionFilter, &sectionEnv },
+                   { &sectionAmp, &sectionMix, &sectionRouting },
+                   { &sectionReverb, &sectionDelay, &sectionMod } };
 
     for (auto* section : { &sectionSample, &sectionAmp, &sectionFilter, &sectionEnv, &sectionRouting, &sectionMix,
                            &sectionReverb, &sectionDelay, &sectionMod })
@@ -97,6 +110,9 @@ KitboxEditor::KitboxEditor (KitboxProcessor& p)
         sectionReverb.zone  = Z::reverb;
         sectionDelay.zone   = Z::delay;
         sectionMod.zone     = Z::mod;
+
+        for (auto* section : fxSections)
+            section->power->setZone (section->zone);
 
         for (auto* section : { &sectionSample, &sectionAmp, &sectionFilter, &sectionEnv, &sectionRouting, &sectionMix,
                                &sectionReverb, &sectionDelay, &sectionMod })
@@ -136,8 +152,8 @@ KitboxEditor::KitboxEditor (KitboxProcessor& p)
         k.a.attach (state, ids.a);
         k.b.attach (state, ids.b);
         k.level.attach (state, ids.level);
-        k.power.attach (state, KitParams::Fx::onIds[slot]);
-        k.power.setTooltip (juce::String (KitParams::Fx::titles[slot]) + " return on / off");
+        k.power->attach (state, KitParams::Fx::onIds[slot]);
+        k.power->setTooltip (juce::String (KitParams::Fx::titles[slot]) + " return on / off");
 
         // Set after attach(): the attachment installs its own text functions,
         // which only know "0..1". These print what the effect loaded means by
@@ -170,6 +186,10 @@ KitboxEditor::KitboxEditor (KitboxProcessor& p)
     themeButton.onClick = [this] { setDarkMode (! Palette::dark); };
     refreshThemeIcon();
     panel.addAndMakeVisible (themeButton);
+
+    settingsButton.setTooltip ("Window size, presets folder");
+    settingsButton.onClick = [this] { showSettingsMenu(); };
+    panel.addAndMakeVisible (settingsButton);
 
     panel.addAndMakeVisible (display);
     display.onToggleSynth = [this] { pads[(size_t) selectedPad]->toggleSource(); };
@@ -259,6 +279,60 @@ void KitboxEditor::setDarkMode (bool shouldBeDark)
     panel.repaint();
 }
 
+void KitboxEditor::showSettingsMenu()
+{
+    juce::PopupMenu sizes;
+    const auto current = (double) getWidth() / (double) panelWidth;
+
+    for (const auto percent : { 60, 75, 85, 100, 115, 125, 140 })
+    {
+        const auto scale = percent / 100.0;
+        sizes.addItem (percent, juce::String (percent) + " %", true, std::abs (current - scale) < 0.01);
+    }
+
+    constexpr int themeItem = 1000, revealItem = 1001;
+    juce::PopupMenu menu;
+    menu.addSubMenu ("Window Size", sizes);
+    menu.addItem (themeItem, "Dark Panel", true, Palette::dark);
+    menu.addSeparator();
+    menu.addItem (revealItem, "Show Presets Folder");
+
+    menu.showMenuAsync (panelMenu (settingsButton),
+                        [safe = juce::Component::SafePointer<KitboxEditor> (this)] (int result)
+    {
+        if (safe == nullptr || result == 0)
+            return;
+
+        if (result == themeItem)
+            safe->setDarkMode (! Palette::dark);
+        else if (result == revealItem)
+            presetFolder().revealToUser();
+        else
+            safe->setSize (juce::roundToInt (panelWidth * result / 100.0), juce::roundToInt (panelHeight * result / 100.0));
+    });
+}
+
+void KitboxEditor::refreshDimming()
+{
+    // Variante B: with the filter Off its knobs and envelope fade back, and an
+    // effect switched off fades its controls. They still turn.
+    const auto filterOff = (int) std::lround (kitbox.parameters.getRawParameterValue (
+                               KitParams::padId (selectedPad, KitParams::Pad::filterType))->load()) == 0;
+
+    const auto dim = [] (juce::Component& c, float alpha)
+    {
+        if (std::abs (c.getAlpha() - alpha) > 0.001f)
+            c.setAlpha (alpha);
+    };
+
+    for (auto* c : std::initializer_list<juce::Component*> { &cutoff, &resonance, &drive, &envAttack, &envDecay, &envAmount })
+        dim (*c, filterOff ? 0.38f : 1.0f);
+
+    for (auto& k : fx)
+        for (auto* c : std::initializer_list<juce::Component*> { &k.type, &k.a, &k.b, &k.level })
+            dim (*c, k.power->getToggleState() ? 1.0f : 0.4f);
+}
+
 void KitboxEditor::refreshThemeIcon()
 {
     themeButton.setIcon (Palette::dark ? moonIcon : sunIcon);
@@ -332,7 +406,7 @@ void KitboxEditor::changeListenerCallback (juce::ChangeBroadcaster*)
 
     refreshKitName();
     display.refresh();
-    panel.repaint (settingsTitleArea);
+    panel.repaint (padsTitleArea);
 }
 
 void KitboxEditor::timerCallback()
@@ -342,6 +416,7 @@ void KitboxEditor::timerCallback()
 
     display.refresh();
     refreshFxLabels();
+    refreshDimming();
 
     // Another Kitbox window may have switched the theme: it is process-wide.
     if (shownDark != Palette::dark)
@@ -529,9 +604,11 @@ juce::File KitboxEditor::neighbourKit (const juce::File& current, const juce::Fi
 
 void KitboxEditor::refreshKitName()
 {
-    // "808 > 808 Clean Kit 01": the folder the arrows step through, then the kit.
+    // The kit, then - framed, as Variante B's "FACTORY" - the folder the
+    // arrows step through ("808 > Live" for one inside another).
     const auto name = kitbox.getKitName();
-    auto text = name.isNotEmpty() ? name : juce::String ("Untitled Kit");
+    const auto text = name.isNotEmpty() ? name : juce::String ("Untitled Kit");
+    juce::String tag;
 
     const auto file = kitbox.getKitFile();
     const auto presets = presetFolder();
@@ -539,11 +616,15 @@ void KitboxEditor::refreshKitName()
     if (name.isNotEmpty() && file.isAChildOf (presets) && file.getParentDirectory() != presets)
     {
         const auto folders = juce::StringArray::fromTokens (file.getParentDirectory().getRelativePathFrom (presets), "/", {});
-        text = folders.joinIntoString (utf8 (" \xe2\x80\xba ")) + utf8 (" \xe2\x80\xba ") + name;
+        tag = folders.joinIntoString (utf8 (" \xe2\x80\xba "));
     }
 
-    if (kitField.getButtonText() != text)
+    if (kitField.getButtonText() != text || kitField.tag != tag)
+    {
+        kitField.tag = tag;
         kitField.setButtonText (text);
+        kitField.repaint();
+    }
 }
 
 void KitboxEditor::loadKitFile (const juce::File& file)
@@ -607,7 +688,7 @@ void KitboxEditor::showKitMenu()
     menu.addItem (loadItem, utf8 ("Load Kit\xe2\x80\xa6"));
     menu.addItem (revealItem, "Show Presets Folder");
 
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&kitField).withMinimumWidth (kitField.getWidth()),
+    menu.showMenuAsync (panelMenu (kitField).withMinimumWidth (juce::roundToInt (kitField.getWidth() * panel.getTransform().mat00)),
                         [safe = juce::Component::SafePointer<KitboxEditor> (this), files, presets] (int result)
     {
         if (safe == nullptr || result == 0)
@@ -684,33 +765,43 @@ void KitboxEditor::resized()
 
 void KitboxEditor::layoutRow (std::vector<Section*> row, juce::Rectangle<int> area)
 {
-    float flexTotal = 0.0f;
+    // Each section as wide as its controls are many, a 1-point upright
+    // between them; the title (or an effect's ON / OFF) 26 wide, 6 in; then
+    // the controls in equal columns, 4 in from either side, centred upright.
+    int columnsTotal = 0;
     for (auto* section : row)
-        flexTotal += section->flex;
+        columnsTotal += (int) section->controls.size();
 
-    const auto available = (float) (area.getWidth() - cardGap * ((int) row.size() - 1));
+    const auto available = (float) (area.getWidth() - ((int) row.size() - 1));
+    const auto x0 = area.getX();
+    int before = 0;
 
     for (size_t s = 0; s < row.size(); ++s)
     {
         auto* section = row[s];
-        const auto width = s + 1 == row.size() ? area.getWidth()
-                                               : juce::roundToInt (available * section->flex / flexTotal);
+        const auto after = before + (int) section->controls.size();
+        const auto left  = x0 + (int) s + juce::roundToInt (available * (float) before / (float) columnsTotal);
+        const auto right = s + 1 == row.size() ? area.getRight()
+                                               : x0 + (int) s + juce::roundToInt (available * (float) after / (float) columnsTotal);
+        section->bounds = { left, area.getY(), right - left, area.getHeight() };
+        before = after;
 
-        section->bounds = area.removeFromLeft (width);
-        area.removeFromLeft (cardGap);
+        auto inner = section->bounds;
+        const auto title = inner.removeFromLeft (sectionTitle);
 
-        // The zone's 2-point line and 13 in, the title row, 12, then the
-        // controls on a grid with 6 between.
-        auto grid = section->bounds.withTrimmedLeft (14).withTrimmedRight (14).withTrimmedTop (15).withTrimmedBottom (11);
-        grid.removeFromTop (16 + 12);
+        if (section->power != nullptr)
+            section->power->setBounds (title.withTrimmedLeft (6).reduced (0, 8));
 
-        const auto columns = section->columns;
-        const auto cell = (float) (grid.getWidth() - padGap * (columns - 1)) / (float) columns;
+        auto grid = inner.reduced (4, 0);
+        const auto columns = (int) section->controls.size();
+        const auto cell = (float) grid.getWidth() / (float) columns;
+        const auto y = grid.getCentreY() - Knob::stackedHeight / 2;
 
-        for (int c = 0; c < (int) section->controls.size(); ++c)
+        for (int c = 0; c < columns; ++c)
         {
-            const auto x = grid.getX() + juce::roundToInt ((cell + (float) padGap) * (float) c);
-            section->controls[(size_t) c]->setBounds (x, grid.getY(), juce::roundToInt (cell), Knob::stackedHeight);
+            const auto x = grid.getX() + juce::roundToInt (cell * (float) c);
+            const auto w = grid.getX() + juce::roundToInt (cell * (float) (c + 1)) - x;
+            section->controls[(size_t) c]->setBounds (x, y, w, Knob::stackedHeight);
         }
     }
 }
@@ -720,10 +811,10 @@ void KitboxEditor::layoutPanel()
     auto area = juce::Rectangle<int> (0, 0, panelWidth, panelHeight);
 
     // Header: from the left, the wordmark, the kit, Load / Save / Learn;
-    // from the right, the theme, Master and its meter, Humanize.
+    // from the right, settings, the theme, Master and its meter, Humanize.
     headerArea = area.removeFromTop (headerHeight);
     {
-        auto row = headerArea.reduced (margin, 0);
+        auto row = headerArea.withTrimmedBottom (1).reduced (margin, 0);
         const auto buttonRow = [] (juce::Rectangle<int> r) { return r.withSizeKeepingCentre (r.getWidth(), 36); };
 
         const auto wordmark = textWidth (Palette::font (22.0f, true, 0.16f), "KITBOX");
@@ -747,6 +838,8 @@ void KitboxEditor::layoutPanel()
             row.removeFromLeft (6);
         }
 
+        settingsButton.setBounds (buttonRow (row.removeFromRight (36)));
+        row.removeFromRight (6);
         themeButton.setBounds (buttonRow (row.removeFromRight (36)));
         row.removeFromRight (20);
         headerDividers[1] = row.removeFromRight (1).withSizeKeepingCentre (1, 28);
@@ -762,14 +855,26 @@ void KitboxEditor::layoutPanel()
     footerArea = area.removeFromBottom (footerHeight);
 
     // Body: the pads on the left, the pad editor on the right.
-    auto body = area.withTrimmedTop (margin).reduced (margin, 0);
+    auto body = area.withTrimmedTop (20).reduced (margin, 0);
     auto padsColumn = body.removeFromLeft (padColumn);
     body.removeFromLeft (columnGap);
     auto editor = body;
 
+    // PADS  C1 - D#2  SYN ALL  ........  . Kick . Snare . Hat . Perc
     padsTitleArea = padsColumn.removeFromTop (titleRow);
-    synAll.setBounds (padsTitleArea.removeFromRight (84));
-    padsTitleArea = padsTitleArea.withRight (synAll.getX());
+    {
+        auto row = padsTitleArea;
+        const auto legendFont = Palette::font (11.0f);
+        int legend = 0;
+        for (auto* name : groupNames)
+            legend += (legend > 0 ? 14 : 0) + 8 + 6 + textWidth (legendFont, name);
+        legendArea = row.removeFromRight (legend);
+
+        const auto title = textWidth (Palette::label (12.0f), "PADS") + 10
+                         + textWidth (Palette::font (11.0f), utf8 ("C#10 \xe2\x80\x93 C#10")) + 12;
+        row.removeFromLeft (title);
+        synAll.setBounds (row.removeFromLeft (84));
+    }
     padsColumn.removeFromTop (titleGap);
 
     padWellArea = padsColumn.removeFromTop (4 * padHeight + 3 * padGap + 2 * padGap);
@@ -788,27 +893,23 @@ void KitboxEditor::layoutPanel()
     }
 
     display.setBounds (editor.removeFromTop (displayHeight));
-    editor.removeFromTop (titleGap);
-    settingsTitleArea = editor.removeFromTop (titleRow);
-    editor.removeFromTop (titleGap);
-    layoutRow ({ &sectionSample, &sectionFilter, &sectionEnv }, editor.removeFromTop (cardHeight));
-    editor.removeFromTop (cardGap);
-    layoutRow ({ &sectionAmp, &sectionMix, &sectionRouting }, editor.removeFromTop (cardHeight));
+    editor.removeFromTop (rackGap);
 
-    // The FX bus, under both columns: a rack a step darker, 20 below the
-    // pads, its title and cards 12 inside its edge.
-    rackArea = juce::Rectangle<int> (margin, padWellArea.getBottom() + 20,
-                                     panelWidth - 2 * margin, 2 * 13 + titleRow + titleGap + cardHeight);
-    auto fxArea = rackArea.reduced (13);
-    fxTitleArea = fxArea.removeFromTop (titleRow).reduced (2, 0);
-    fxArea.removeFromTop (titleGap);
-    layoutRow ({ &sectionReverb, &sectionDelay, &sectionMod }, fxArea);
-
-    for (int slot = 0; slot < KitParams::Fx::numSlots; ++slot)
+    // The rack, down to the pads' bottom edge: a hairline round it, three rows
+    // with a hairline between.
+    rackArea = editor.withBottom (padWellArea.getBottom());
     {
-        const Section* section[] { &sectionReverb, &sectionDelay, &sectionMod };
-        const auto title = section[slot]->bounds.reduced (14, 0).withTrimmedTop (15).withHeight (16);
-        fx[(size_t) slot].power.setBounds (title.withLeft (title.getRight() - 48).withSizeKeepingCentre (48, 20));
+        auto inner = rackArea.reduced (1);
+        const auto rowHeight = (float) (inner.getHeight() - 2) / 3.0f;
+        const auto top = inner.getY();
+
+        for (int r = 0; r < 3; ++r)
+        {
+            const auto y0 = top + juce::roundToInt ((rowHeight + 1.0f) * (float) r);
+            const auto y1 = r == 2 ? inner.getBottom() : top + juce::roundToInt ((rowHeight + 1.0f) * (float) r + rowHeight);
+            rackRows[(size_t) r] = { inner.getX(), y0, inner.getWidth(), y1 - y0 };
+            layoutRow (rackLayout[(size_t) r], rackRows[(size_t) r]);
+        }
     }
 }
 
@@ -823,12 +924,6 @@ void KitboxEditor::paintPanel (juce::Graphics& g)
         g.setFont (Palette::label (12.0f));
         g.drawText (text.toUpperCase(), area, juce::Justification::centredLeft);
         return textWidth (Palette::label (12.0f), text.toUpperCase());
-    };
-
-    const auto rule = [&g] (juce::Rectangle<int> area)
-    {
-        g.setColour (Palette::rule);
-        g.fillRect (area.withSizeKeepingCentre (area.getWidth(), 1));
     };
 
     // Header.
@@ -878,7 +973,7 @@ void KitboxEditor::paintPanel (juce::Graphics& g)
         }
     }
 
-    // PADS  C1 - D#2
+    // PADS  C1 - D#2                      . Kick . Snare . Hat . Perc
     {
         auto area = padsTitleArea;
         area.removeFromLeft (heading (area, "Pads") + 10);
@@ -887,95 +982,82 @@ void KitboxEditor::paintPanel (juce::Graphics& g)
         g.drawText (KitParams::noteName (kitbox.getPadNote (0)) + utf8 (" \xe2\x80\x93 ")
                         + KitParams::noteName (kitbox.getPadNote (KitParams::numPads - 1)),
                     area, juce::Justification::centredLeft);
+
+        auto legend = legendArea;
+        const auto font = Palette::font (11.0f);
+        g.setFont (font);
+
+        for (int group = 0; group < 4; ++group)
+        {
+            if (group > 0)
+                legend.removeFromLeft (14);
+
+            g.setColour (Palette::padColour (group * 4));
+            g.fillEllipse (legend.removeFromLeft (8).withSizeKeepingCentre (8, 8).toFloat());
+            legend.removeFromLeft (6);
+            g.setColour (Palette::inkDim);
+            g.drawText (groupNames[group], legend.removeFromLeft (textWidth (font, groupNames[group])), juce::Justification::centredLeft);
+        }
     }
 
     g.setColour (Palette::padWell);
     g.fillRoundedRectangle (padWellArea.toFloat(), 6.0f);
 
-    // PAD SETTINGS  (o PAD 01 . name)  ----------  Click a pad to edit it
+    // The rack: one panel with a hairline edge, the FX bus's row a step
+    // darker, hairlines between the rows and uprights between the sections.
     {
-        auto area = settingsTitleArea;
-        area.removeFromLeft (heading (area, "Pad settings") + 12);
+        const auto outer = rackArea.toFloat();
+        constexpr float radius = 8.0f;
 
-        const auto sample = kitbox.getPadSample (selectedPad);
-        const auto pillText = "PAD " + juce::String (selectedPad + 1).paddedLeft ('0', 2) + utf8 (" \xc2\xb7 ")
-                            + (sample != nullptr ? sample->getName() : juce::String ("Empty"));
-        const auto pillFont = Palette::font (11.0f);
-        const auto pill = area.removeFromLeft (juce::jmin (360, 8 + 8 + 8 + textWidth (pillFont, pillText) + 10)).toFloat();
+        juce::Graphics::ScopedSaveState state (g);
+        juce::Path shape;
+        shape.addRoundedRectangle (outer, radius);
 
-        g.setColour (Palette::pill);
-        g.fillRoundedRectangle (pill, pill.getHeight() * 0.5f);
-        g.setColour (Palette::pillLine);
-        g.drawRoundedRectangle (pill.reduced (0.5f), pill.getHeight() * 0.5f, 1.0f);
-        g.setColour (Palette::padColour (selectedPad, kitbox.getPadColour (selectedPad)));
-        g.fillEllipse (pill.getX() + 8.0f, pill.getCentreY() - 4.0f, 8.0f, 8.0f);
-        g.setColour (Palette::ink);
-        g.setFont (pillFont);
-        g.drawText (pillText, pill.withTrimmedLeft (24.0f).withTrimmedRight (10.0f), juce::Justification::centredLeft, true);
+        g.setColour (Palette::rackEdge);
+        g.fillPath (shape);
 
-        const auto hint = juce::String ("Click a pad to edit it");
-        const auto hintArea = area.removeFromRight (textWidth (Palette::font (11.0f), hint));
-        g.setColour (Palette::inkFaint);
-        g.drawText (hint, hintArea, juce::Justification::centredRight);
-        rule (area.reduced (12, 0));
-    }
+        juce::Path inside;
+        inside.addRoundedRectangle (outer.reduced (1.0f), radius - 1.0f);
+        g.reduceClipRegion (inside);
+        g.setColour (Palette::rackPanel);
+        g.fillRect (outer);
+        g.setColour (Palette::rackFxRow);
+        g.fillRect (rackRows[2].withTop (rackRows[2].getY()).toFloat().withBottom (outer.getBottom()));
 
-    // The FX rack's frame.
-    g.setColour (Palette::rack);
-    g.fillRoundedRectangle (rackArea.toFloat(), 12.0f);
-    g.setColour (Palette::rackLine);
-    g.drawRoundedRectangle (rackArea.toFloat().reduced (0.5f), 12.0f, 1.0f);
+        g.setColour (Palette::rackEdge);
+        g.fillRect (rackRows[0].getX(), rackRows[0].getBottom(), rackRows[0].getWidth(), 1);
+        g.fillRect (rackRows[1].getX(), rackRows[1].getBottom(), rackRows[1].getWidth(), 1);
 
-    // FX BUS  Shared returns . fed by the Mix sends of every pad  ----------
-    {
-        auto area = fxTitleArea;
-        area.removeFromLeft (heading (area, "FX Bus") + 12);
-        const auto meta = utf8 ("Shared returns \xc2\xb7 fed by the Mix sends of every pad");
-        g.setColour (Palette::inkFaint);
-        g.setFont (Palette::font (11.0f));
-        g.drawText (meta, area.removeFromLeft (textWidth (Palette::font (11.0f), meta)), juce::Justification::centredLeft);
-        rule (area.withTrimmedLeft (12));
-    }
-
-    // The cards, each in its zone's colours: a faint tint, the edge, a
-    // 2-point line along the top, and a dot before the title.
-    for (auto* section : { &sectionSample, &sectionAmp, &sectionFilter, &sectionEnv, &sectionRouting, &sectionMix,
-                           &sectionReverb, &sectionDelay, &sectionMod })
-    {
-        const auto zone = Palette::zone (section->zone, section->fx);
-        const auto bounds = section->bounds.toFloat();
-        constexpr float radius = 10.0f;
-
+        for (const auto& row : rackLayout)
         {
-            juce::Graphics::ScopedSaveState state (g);
-            juce::Path outline;
-            outline.addRoundedRectangle (bounds, radius);
-            g.reduceClipRegion (outline);
+            for (size_t s = 0; s < row.size(); ++s)
+            {
+                const auto* section = row[s];
 
-            g.setColour (zone.border);
-            g.fillRect (bounds);
-            g.setColour (zone.line);
-            g.fillRect (bounds.withHeight (2.0f));
-            g.setColour (zone.tint);
-            g.fillRoundedRectangle (bounds.withTrimmedLeft (1.0f).withTrimmedRight (1.0f)
-                                          .withTrimmedTop (2.0f).withTrimmedBottom (1.0f), radius - 1.0f);
+                if (s > 0)
+                {
+                    g.setColour (Palette::rackDivider);
+                    g.fillRect (section->bounds.getX() - 1, section->bounds.getY(), 1, section->bounds.getHeight());
+                }
+
+                if (section->power != nullptr)
+                    continue;   // its ON / OFF is its title
+
+                // The title, upright, read from the bottom, in the zone's colour.
+                const auto zone = Palette::zone (section->zone, section->fx);
+                const auto column = section->bounds.withWidth (sectionTitle).withTrimmedLeft (6).toFloat();
+                const auto font = Palette::font (11.0f, true, 0.14f);
+                const auto title = section->title.toUpperCase();
+                const auto length = juce::GlyphArrangement::getStringWidth (font, title);
+                const auto centre = column.getCentre();
+
+                juce::Graphics::ScopedSaveState rotated (g);
+                g.addTransform (juce::AffineTransform::rotation (-juce::MathConstants<float>::halfPi, centre.x, centre.y));
+                g.setColour (zone.label);
+                g.setFont (font);
+                g.drawText (title, juce::Rectangle<float> (length + 4.0f, 14.0f).withCentre (centre), juce::Justification::centred, false);
+            }
         }
-
-        auto title = section->bounds.reduced (14, 0).withTrimmedTop (15).withHeight (16);
-
-        if (section->meta.isNotEmpty())
-        {
-            g.setColour (Palette::inkFaint);
-            g.setFont (Palette::font (11.0f));
-            g.drawText (section->meta, title, juce::Justification::centredRight);
-        }
-
-        g.setColour (zone.line);
-        g.fillEllipse (title.removeFromLeft (7).toFloat().withSizeKeepingCentre (7.0f, 7.0f));
-        title.removeFromLeft (8);
-        g.setColour (zone.label);
-        g.setFont (Palette::label (12.0f));
-        g.drawText (section->title.toUpperCase(), title, juce::Justification::centredLeft);
     }
 
     // Status bar.

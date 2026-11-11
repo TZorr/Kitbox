@@ -49,7 +49,7 @@ cmake_minimum_required(VERSION 3.22)
 # became a ZIP holding originals, synths and their .drumparams.
 # 0.7.1: right-click > Export Samples... writes them into a folder.
 # 0.7.2: a Dark panel, switched under the wordmark and kept per user.
-project(Kitbox VERSION 0.9.1)
+project(Kitbox VERSION 0.10.0)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
