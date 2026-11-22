@@ -47,7 +47,7 @@ opens at 85 % the first time and remembers the size.
 
 ## Install
 
-Download `Kitbox.0.9.1.pkg` from
+Download `Kitbox.0.10.0.pkg` from
 [Releases](https://github.com/TZorr/Kitbox/releases) and run it; choose AU,
 VST3 or both - they go into `/Library/Audio/Plug-Ins`. Apple Silicon, macOS
 26.5 or later. The installer is unsigned, so Gatekeeper refuses it at first:
