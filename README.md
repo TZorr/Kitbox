@@ -8,7 +8,7 @@ drum hits as clean synth voices and hands a whole kit over in one step:
 notes. Since 0.7.0 its engine is in Kitbox too: each pad plays its sample or
 Transmute's synth of it.
 
-Family: [Rackbox](https://github.com/TZorr/Rackbox) (four-slot multi-effect), [Rackbox Plus](https://github.com/TZorr/RackboxPlus) (the same rack, eight knobs per effect), [FMBox](https://github.com/TZorr/FMBox) (eight-sound FM drum synth), [Chordbox](https://github.com/TZorr/Chordbox) (16-pad chord generator), [Transmute](https://github.com/TZorr/Transmute) (drum resynthesis).
+Family: [Rackbox](https://github.com/TZorr/Rackbox) (four-slot multi-effect), [Rackbox Plus](https://github.com/TZorr/RackboxPlus) (the same rack, eight knobs per effect), [FMBox](https://github.com/TZorr/FMBox) (eight-sound FM drum synth), [Chordbox](https://github.com/TZorr/Chordbox) (16-pad chord generator), [Transmute](https://github.com/TZorr/Transmute) (drum resynthesis), [Clearbox](https://github.com/TZorr/Clearbox) (target-curve dynamic EQ).
 
 <img src="screenshot.png" width="700" alt="Kitbox 0.10: sixteen coloured pads with Mute and Solo, the sample display, and one control rack with the pad's settings and the FX bus, the knobs ringed in their zone's colour">
 
